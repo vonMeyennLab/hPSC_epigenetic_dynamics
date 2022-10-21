@@ -1,0 +1,108 @@
+GRCh38	HNES1_0_H3K27me3	HNES1_d0_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K27me3	HNES1_d0_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K27ac	HNES1_d0_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K27ac	HNES1_d0_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K4me3	HNES1_d0_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K4me3	HNES1_d0_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K4me1	HNES1_d0_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K4me1	HNES1_d0_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K9me3	HNES1_d0_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_H3K9me3	HNES1_d0_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_0_ATAC-Seq	HNES1_d0_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	HNES1_0_ATAC-Seq	HNES1_d0_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	HNES1_3_H3K27me3	HNES1_d3_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K27me3	HNES1_d3_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K27ac	HNES1_d3_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K27ac	HNES1_d3_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K4me3	HNES1_d3_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K4me3	HNES1_d3_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K4me1	HNES1_d3_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K4me1	HNES1_d3_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K9me3	HNES1_d3_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_H3K9me3	HNES1_d3_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_3_ATAC-Seq	HNES1_d3_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	HNES1_3_ATAC-Seq	HNES1_d3_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	HNES1_10_H3K27me3	HNES1_d10_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K27me3	HNES1_d10_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K27ac	HNES1_d10_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K27ac	HNES1_d10_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K4me3	HNES1_d10_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K4me3	HNES1_d10_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K4me1	HNES1_d10_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K4me1	HNES1_d10_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K9me3	HNES1_d10_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_H3K9me3	HNES1_d10_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	HNES1_10_ATAC-Seq	HNES1_d10_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	HNES1_10_ATAC-Seq	HNES1_d10_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_0_H3K27me3	cR_H9_EOS_d0_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K27me3	cR_H9_EOS_d0_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K27ac	cR_H9_EOS_d0_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K27ac	cR_H9_EOS_d0_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K4me3	cR_H9_EOS_d0_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K4me3	cR_H9_EOS_d0_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K4me1	cR_H9_EOS_d0_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K4me1	cR_H9_EOS_d0_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K9me3	cR_H9_EOS_d0_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_H3K9me3	cR_H9_EOS_d0_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_0_ATAC-Seq	cR_H9_EOS_d0_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_0_ATAC-Seq	cR_H9_EOS_d0_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_3_H3K27me3	cR_H9_EOS_d3_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K27me3	cR_H9_EOS_d3_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K27ac	cR_H9_EOS_d3_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K27ac	cR_H9_EOS_d3_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K4me3	cR_H9_EOS_d3_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K4me3	cR_H9_EOS_d3_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K4me1	cR_H9_EOS_d3_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K4me1	cR_H9_EOS_d3_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K9me3	cR_H9_EOS_d3_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_H3K9me3	cR_H9_EOS_d3_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_3_ATAC-Seq	cR_H9_EOS_d3_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_3_ATAC-Seq	cR_H9_EOS_d3_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_10_H3K27me3	cR_H9_EOS_d10_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K27me3	cR_H9_EOS_d10_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K27ac	cR_H9_EOS_d10_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K27ac	cR_H9_EOS_d10_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K4me3	cR_H9_EOS_d10_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K4me3	cR_H9_EOS_d10_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K4me1	cR_H9_EOS_d10_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K4me1	cR_H9_EOS_d10_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K9me3	cR_H9_EOS_d10_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_H3K9me3	cR_H9_EOS_d10_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_10_ATAC-Seq	cR_H9_EOS_d10_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_10_ATAC-Seq	cR_H9_EOS_d10_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	H9_EOS_ATAC-Seq	H9_EOS_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	H9_EOS_H3K27ac	H9_EOS_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K27me3	H9_EOS_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K4me1	H9_EOS_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K4me3	H9_EOS_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K9me3	H9_EOS_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_ATAC-Seq	H9_EOS_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	H9_EOS_H3K27ac	H9_EOS_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K27me3	H9_EOS_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K4me1	H9_EOS_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K4me3	H9_EOS_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	H9_EOS_H3K9me3	H9_EOS_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K27me3	cR_H9_EOS_d20X_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K27me3	cR_H9_EOS_d20X_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K27ac	cR_H9_EOS_d20X_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K27ac	cR_H9_EOS_d20X_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K4me3	cR_H9_EOS_d20X_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K4me3	cR_H9_EOS_d20X_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K4me1	cR_H9_EOS_d20X_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K4me1	cR_H9_EOS_d20X_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K9me3	cR_H9_EOS_d20X_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_H3K9me3	cR_H9_EOS_d20X_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20X_ATAC-Seq	cR_H9_EOS_d20X_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_20X_ATAC-Seq	cR_H9_EOS_d20X_R2.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_20E_H3K27me3	cR_H9_EOS_d20E_R1.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K27me3	cR_H9_EOS_d20E_R2.mLb.clN.sorted_H3K27me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K27ac	cR_H9_EOS_d20E_R1.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K27ac	cR_H9_EOS_d20E_R2.mLb.clN.sorted_H3K27ac.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K4me3	cR_H9_EOS_d20E_R1.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K4me3	cR_H9_EOS_d20E_R2.mLb.clN.sorted_H3K4me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K4me1	cR_H9_EOS_d20E_R1.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K4me1	cR_H9_EOS_d20E_R2.mLb.clN.sorted_H3K4me1.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K9me3	cR_H9_EOS_d20E_R1.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_H3K9me3	cR_H9_EOS_d20E_R2.mLb.clN.sorted_H3K9me3.bam	INPUT_R1.mLb.clN.sorted.bam
+GRCh38	cR_H9_EOS_20E_ATAC-Seq	cR_H9_EOS_d20E_R1.mLb.clN.sorted_atacseq.bam	
+GRCh38	cR_H9_EOS_20E_ATAC-Seq	cR_H9_EOS_d20E_R2.mLb.clN.sorted_atacseq.bam	
