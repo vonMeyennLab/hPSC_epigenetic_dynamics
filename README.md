@@ -15,3 +15,13 @@ Human pluripotent stem cells (hPSCs) are of fundamental relevance in regenerativ
 
 
 ### Directory structure
+:file_folder: ```data/scripts```</p>
+&emsp;&emsp;:file_folder:```ChromHMM```</p>
+&emsp;&emsp;&emsp;&emsp;*This folder contains the scripts used to obtain the ChromHMM model. They are in the file ```ChromHMM_commands.txt```*
+
+
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```design```</p>
+
+
+&emsp;&emsp;:file_folder: ```nf-core_scripts ```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```design```
