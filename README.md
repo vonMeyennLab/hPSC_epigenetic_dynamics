@@ -15,13 +15,51 @@ Human pluripotent stem cells (hPSCs) are of fundamental relevance in regenerativ
 
 
 ### Directory structure
-:file_folder: ```data/scripts```</p>
-&emsp;&emsp;:file_folder:```ChromHMM```</p>
-&emsp;&emsp;&emsp;&emsp;*This folder contains the scripts used to obtain the ChromHMM model. They are in the file ```ChromHMM_commands.txt```*
-
-
+#### 1. :file_folder: ```data/scripts```</p>
+&emsp;&emsp;:file_folder: ```nf-core_scripts ```</p>
 &emsp;&emsp;&emsp;&emsp;:file_folder: ```design```</p>
 
+&emsp;&emsp;:file_folder:```ChromHMM```&ensp;*Contains the commands used to generate the ChromHMM model (ChromHMM_commands.txt) and the design files for the concatenated and stacked model (inside the folder 'design').*</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```design```</p>
 
-&emsp;&emsp;:file_folder: ```nf-core_scripts ```</p>
-&emsp;&emsp;&emsp;&emsp;:file_folder: ```design```
+#### 2. :file_folder: ```analysis```</p>
+&emsp;&emsp;:file_folder: ```functions```</p>
+&emsp;&emsp;:file_folder: ```objects```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```1_metadata```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```2_gene_transcript_database```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```3_annotation```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```4_rnaseq```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```5_chipseq_atacseq```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```6_pbat```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```7_counts_inside_regions```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```8_differentially_expressed_genes```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```9_differential_peaks```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```10_DMRs```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```11_annotation_extra```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```12_LOLA_custom```</p>
+&emsp;&emsp;:file_folder: ```main```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```01_qc```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```02_genome_wide_analysis```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```03_condition_comparison```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```ChromHMM```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```CpG_islands```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```MOFA```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```X_chromosome_inactivation```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```bivalency```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```human_imprints```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```motifs```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```repeats```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```04_epigenetics_promoters_expression```</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
