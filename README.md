@@ -1,6 +1,6 @@
 ## Epigenetic dynamics during capacitation of naïve human pluripotent stem cells
 
-<img width="100%" src="https://github.com/vonMeyennLab/hPSC_epigenetic_dynamics/blob/main/Figure_1A-B.png" /></p>
+<img width="100%" src="https://github.com/vonMeyennLab/hPSC_epigenetic_dynamics/blob/main/Figure_1AB.png" /></p>
 
 This repository contains all scripts to reproduce the results of the manuscript.
 
