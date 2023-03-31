@@ -1,0 +1,121 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "CpG methylation in annotated regions"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading CpG methylation data in annotated regions
+```{r}
+
+PBATdb_annotated_gr <- readRDS("output/database/meth_counts_w_replicates_annotated_gr.rds")
+
+# Selecting only autosomes
+PBATdb_annotated_gr <- PBATdb_annotated_gr %>% map(function(x){map(x, ~ map(.x, ~ .x[seqnames(.x) %in% 1:22,]))})
+
+# Removing samples from day 3
+PBATdb_annotated_gr <- PBATdb_annotated_gr %>% map(function(x){x[!names(x) %in% c("cR-H9-EOS d3", "HNES1 d3")]})
+
+```
+
+# Barplot with methylation in annotated regions
+```{r}
+
+# Convert methylation ratio into categories
+meth_CpGs_annotated_categories <-
+map(PBATdb_annotated_gr, function(x){
+  map(x, 
+  ~ map2_df(.x, names(.x),
+            ~ as.data.frame(.x) %>% 
+            filter(coverage >= 3) %>%
+            mutate(meth_ratio    = numCs/coverage) %>%
+            mutate(meth_category = case_when(meth_ratio < .2  ~ "Low (<20%)", 
+                                             meth_ratio > .8  ~ "High (>80%)", 
+                                             TRUE             ~ "Intermediate (20-80%)")) %>%
+            pull(meth_category) %>% 
+            table %>%
+            as_tibble() %>% 
+            mutate(sample = .y) %>% 
+            dplyr::rename(meth_category = ".")
+    )
+  ) %>% purrr::reduce(rbind)
+  })
+
+# Merge methylation categories with metadata columns
+meth_CpGs_annotated_categories_df <- 
+map2_df(meth_CpGs_annotated_categories, names(meth_CpGs_annotated_categories),
+  ~ .x %>% 
+    left_join(unique(PBAT_metadata %>% .[, c("sample_id", "color", "cell", "group", "day")]), by = c("sample" = "sample_id")) %>%
+    group_by(group) %>%
+    mutate(meth_ratio = n/sum(n)) %>%
+    ungroup %>%
+    mutate(meth_category = factor(meth_category, levels = c("Low (<20%)", "Intermediate (20-80%)", "High (>80%)"))) %>% 
+    arrange(day) %>% 
+    mutate(group = factor(group, levels = (unique(group)))) %>% 
+    mutate(annotation = .y)
+   )
+
+# Changing group names
+meth_CpGs_annotated_categories_df$group <- meth_CpGs_annotated_categories_df$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+meth_CpGs_annotated_categories_df       <- meth_CpGs_annotated_categories_df %>% mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d3", "cR-H9 d3", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+
+# Plot with the percentage of CpGs in each methylation category
+plot_CpG_meth_annotated_category <- 
+ ggplot(
+   meth_CpGs_annotated_categories_df %>% 
+     mutate(annotation = factor(annotation, levels = unique(annotation))) %>% 
+     filter(annotation != "FANTOM5 enhancers") %>% 
+     group_by(meth_category, group, annotation) %>% 
+     summarise(n = sum(n)) %>% 
+     ungroup %>%
+     group_by(group, annotation) %>% 
+     mutate(meth_ratio = n/sum(n)) %>% 
+     ungroup, 
+   aes(group, meth_ratio*100, fill = meth_category)) +
+  geom_bar(stat = "identity", width = 1, color = "black") +
+  theme_publication() +
+  theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, size = 10), 
+        strip.background = element_blank(), 
+        panel.border     = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) + 
+  scale_fill_brewer(palette = "Set1", direction = 1) +
+  scale_x_discrete(expand = c(0,0)) + 
+  scale_y_continuous(expand = c(0,0)) +
+  labs(x = "", y = "Percentage of CpGs (%)", fill = "CpG methylation level") +
+  facet_grid(~ annotation, labeller = label_wrap_gen(width = 15))
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/02_genome_wide_analysis/meth_CpGs_annotated_regions_1.svg", width = 18, height = 3.5)
+plot_CpG_meth_annotated_category
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

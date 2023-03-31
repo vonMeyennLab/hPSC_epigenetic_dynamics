@@ -1,0 +1,154 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Methylation percentage in annotated regions"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading the filtered normalized methylation data
+```{r}
+
+plan("multisession", workers = 20)
+
+PBATdb_filtered_normed <-
+future_map(list.files(path       = "output/database/PBATdb_filtered_normed",
+                      pattern    = "_filtered_normed.txt.bgz$",
+                      full.names = T),
+    function(x){
+      
+      sample_ids <- x %>%
+                    str_remove("output/database/PBATdb_filtered_normed") %>%
+                    str_remove("_filtered_normed.txt.bgz")
+      
+      treatment_ids <- PBAT_metadata$group %>% 
+                       as.factor() %>% 
+                       as.numeric() %>% 
+                       .[match(sample_ids, PBAT_metadata$sample_id)]
+      
+      
+      methylKit:::readMethylRawDB(dbpath     = x,
+                                  sample.id  = sample_ids, 
+                                  dbtype     = "tabix",
+                                  assembly   = "hg38",
+                                  context    = "CpG",
+                                  resolution = "base")
+    })
+
+# converting the methylRaw objects into a methylRawList object
+PBATdb_filtered_normed <- 
+new("methylRawList",
+    PBATdb_filtered_normed,
+    treatment = PBAT_metadata[match(map_chr(PBATdb_filtered_normed, methylKit::getSampleID), PBAT_metadata$sample_id), "group", drop = TRUE] %>% as.factor() %>% as.numeric()
+    )
+
+plan("sequential")
+
+```
+
+# Methylation counts inside genomic regions
+```{r}
+
+get_meth_ratio_in_regions <- 
+function(region_gr){
+
+PBAT_counts <- 
+map(PBATdb_filtered_normed,
+           function(x){
+             
+             obj <- as(x, "methylRaw")
+             names(region_gr) <- NULL
+             
+             methylKit::regionCounts(object       = obj, 
+                                     regions      = region_gr,
+                                     cov.bases    = 2,
+                                     strand.aware = FALSE)                  
+                   
+                 }) %>% 
+set_names(map_chr(PBATdb_filtered_normed, getSampleID))
+
+# Converting methylRaw objects to dataframe
+PBAT_meth_ratio <- 
+  PBAT_counts %>%
+  map2(names(.), function(x, y){
+  
+    gr <- as(x, "GRanges")
+    gr <- gr %>% .[.$coverage > 2]
+    elementMetadata(gr)[, y] <- (gr$numCs)/(gr$coverage)
+    gr[, y]
+  
+  }) %>% 
+  map(~ left_join(as_tibble(region_gr), as_tibble(.x), by = c("seqnames", "start", "end", "strand")) %>% unique) %>% 
+  purrr::reduce(cbind) %>%
+  select(c("seqnames", "start", "end", "strand", str_replace_all(names(PBAT_counts), "\\-", "\\.")))
+
+# Correcting column names
+colnames(PBAT_meth_ratio) <- str_replace_all(colnames(PBAT_meth_ratio), "\\.", "\\-")
+
+return(PBAT_meth_ratio)
+
+}
+
+```
+
+# Chosing the annotations
+```{r}
+
+meth_ratio_in_annotated_regions <- 
+  genome_annotation %>% .[c(
+    "Promoters",
+    "CGI Promoters",
+    "Non-CGI Promoters",
+    "5' UTRs",
+    "Exons",
+    "Introns",
+    "3' UTRs",
+    "CpG islands",
+    "CGI shores",
+    "CGI shelves",
+    "CGI inter",
+    "Promoter-proximal Naïve enhancers",
+    "Promoter-proximal Naïve super-enhancers",
+    "Promoter-proximal Primed enhancers",
+    "Promoter-proximal Primed super-enhancers",
+    "Distal Naïve enhancers",
+    "Distal Naïve super-enhancers",
+    "Distal Primed enhancers",
+    "Distal Primed super-enhancers",
+    "Repeats",
+    "Intergenic regions",
+    "Human imprints"
+  )] %>% 
+map(~ get_meth_ratio_in_regions(region_gr = .x))
+
+```
+
+# Saving results
+```{r}
+
+save(meth_ratio_in_annotated_regions, file = "output/database/meth_ratio_in_annotated_regions.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

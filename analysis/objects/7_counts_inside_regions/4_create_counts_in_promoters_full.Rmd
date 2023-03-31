@@ -1,0 +1,147 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "All sequencing data counts inside promoters"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Load the saved data
+```{r}
+
+# Loading RNA-seq read counts
+load(file = "output/database/rnaseq_counts.RData")
+
+# Loading ChIP-Seq and ATAC-Seq promoter enriched counts
+load(file = "output/database/chipseq_atacseq_counts_in_promoters.RData")
+
+# Loading Methylation ratio in promoters
+load(file = "output/database/meth_ratio_in_annotated_regions.RData")
+
+```
+
+# Select promoters
+```{r}
+
+# Selecting the most upstream gene promoters and subset by the genes available in the RNA-seq data
+gene_promoters <-
+  genome_annotation$Promoters %>%
+  .[seqnames(.) %in% 1:22] %>% 
+  as.data.frame() %>% 
+  arrange(seqnames, start) %>% 
+  filter(gene_id %in% rownames(RNAseq_normalized_counts))
+
+```
+
+# Average the counts from replicates
+```{r}
+
+# RNA-Seq
+RNAseq_normalized_counts <- 
+  RNAseq_normalized_counts %>% 
+  .[unique(gene_promoters$gene_id),] %>% 
+  as.data.frame() %>%
+  rownames_to_column("gene_id") %>% 
+  gather(sample_id, counts, -gene_id) %>% 
+  left_join(unique(RNAseq_metadata[, c("sample_id", "group")]), by = "sample_id") %>% 
+  group_by(gene_id, group) %>% 
+  summarise(counts = mean(counts, na.rm = TRUE) %>% `+`(1) %>% log2) %>% 
+  ungroup %>% 
+  dplyr::rename(`RNA-Seq` = counts)
+
+
+# ChIP-Seq and ATAC-Seq
+plan("multisession", workers = 6)
+
+chipseq_atacseq_normalized_counts <- 
+  furrr::future_map2(chipseq_atacseq_normalized_counts, names(chipseq_atacseq_normalized_counts), 
+    ~ as.data.frame(.x) %>%
+    rownames_to_column("gene_id") %>%
+    filter(gene_id %in% unique(gene_promoters$gene_id)) %>%
+    gather(sample_id, counts, -gene_id) %>% 
+    left_join(unique(RNAseq_metadata[, c("sample_id", "group")]), by = "sample_id") %>% 
+    group_by(gene_id, group) %>% 
+    summarise(counts = mean(counts, na.rm = TRUE) %>% `+`(1) %>% log2) %>% 
+    ungroup %>% 
+    dplyr::rename(!!.y := counts)
+  )
+
+plan("sequential")
+
+
+
+######## Methylation ########
+
+# Vector with the promoter index and the gene ID
+promoter_index_gene_id <- 
+  meth_ratio_in_annotated_regions$Promoters %>%
+  as.data.frame() %>%
+  rownames_to_column("index") %>%
+  select(c("index", "seqnames", "start", "end", "strand")) %>% 
+  left_join(unique(as.data.frame(genome_annotation$Promoters) %>% select(c("seqnames", "start", "end", "strand", "gene_id")))) %>% 
+  select(c("index", "gene_id")) %>% 
+  unique
+
+PBAT_meth_ratio <- 
+  meth_ratio_in_annotated_regions$Promoters %>% 
+  as.data.frame() %>%
+  rownames_to_column("index") %>%
+  select(-c("seqnames", "start", "end", "strand")) %>% 
+  gather(sample_id, meth_ratio, -index) %>% 
+  left_join(unique(PBAT_metadata[, c("sample_id", "group")]), by = "sample_id") %>% 
+  group_by(index, group) %>% 
+  summarise(meth_ratio = mean(meth_ratio, na.rm = TRUE)) %>% 
+  ungroup %>% 
+  dplyr::rename(Methylation = meth_ratio) %>% 
+  left_join(promoter_index_gene_id) %>% 
+  select(c("gene_id", "group", "Methylation"))
+
+```
+
+# Joining all the promoter data into a single dataframe
+```{r}
+
+promoter_expression_data <- 
+  RNAseq_normalized_counts %>%
+  filter(group %in% c("HNES1 d0", "cR-H9-EOS d0", "HNES1 d10", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS")) %>% 
+  left_join(chipseq_atacseq_normalized_counts %>% purrr::reduce(left_join)) %>% 
+  left_join(PBAT_meth_ratio)
+
+```
+
+# Adding metadata to the promoter data
+```{r}
+
+counts_in_promoters_full <- promoter_expression_data %>% left_join(unique(gene_promoters[, c("seqnames", "CGI", "gene_biotype", "gene_id")]), by = "gene_id")
+
+```
+
+# Saving data
+```{r}
+
+save(counts_in_promoters_full, file = "output/database/counts_in_promoters_full.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

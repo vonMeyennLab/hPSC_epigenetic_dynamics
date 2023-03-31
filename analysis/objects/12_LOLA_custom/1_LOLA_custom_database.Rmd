@@ -1,0 +1,372 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Create a LOLA custom database"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 26, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Diffbind peaks and DMRs
+```{r}
+
+# Loading the differential peak analysis
+load("output/database/differential_peaks_dba_analyze.RData")
+
+# Saving Loss differential peaks as BED files
+map2(c("ATAC-Seq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3"), 
+     c("atacseq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3"), 
+     function(x, y){
+       dba_analyze[[x]] %>% map2(names(.), ~ dba.report(.x) %>% .[.$Fold > 2] %>% rtracklayer::export.bed(con = paste0("output/database/LOLA/LOLACustom/hg38/diffbind_peaks/regions/", y, "_", .y, "_loss.bed")))})
+
+# Saving Gain differential peaks as BED files
+map2(c("ATAC-Seq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3"), 
+     c("atacseq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3"), 
+     function(x, y){
+       dba_analyze[[x]] %>%
+         map2(names(.), ~ dba.report(.x) %>% .[.$Fold < -2] %>% rtracklayer::export.bed(con = paste0("output/database/LOLA/LOLACustom/hg38/diffbind_peaks/regions/", y, "_", .y, "_gain.bed")))})
+
+# Loading the methylation DMRs
+list.files("output/database/", pattern = "DMRs", full.names = T) %>%
+  walk2(list.files("output/database/", pattern = "DMRs") %>% str_remove(".RData") %>% str_replace_all("\\.", "_"), function(x, y){
+    load(x)
+    assign(y, value = list(bismarkBSseq, regions), envir = .GlobalEnv)
+    })
+
+# Filtering and saving DMRs with qvalue < 0.05
+filtered_DMRs <- 
+as.list(.GlobalEnv) %>% .[str_detect(names(.), "DMRs")] %>% 
+map2(names(.), function(x, y){
+        gr <- x[[2]] %>% .[!is.na(.$qval)] %>% .[.$qval < 0.05] %>% .[seqnames(.) %in% c(1:22, "X", "Y")]
+        gr_loss <- gr %>% .[.$stat < 0]
+        gr_gain <- gr %>% .[.$stat > 0]
+        if(sum(width(gr)) > 0){return(list(gr_loss, gr_gain) %>% set_names(c(paste(y, "loss", sep = "_"), paste(y, "gain", sep = "_"))))}
+        }) %>% Filter(Negate(is_empty), .) %>% 
+  map(~ map2(.x, names(.x), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/diffbind_peaks/regions/", .y, ".bed"))))
+
+# Saving index.txt file
+map2_dfr(c("ATAC-Seq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3", "Methylation"), 
+     c("atacseq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3", "DMRs"), 
+     function(x, y){
+       
+       if(x == "Methylation" & y == "DMRs"){
+         
+       gain_df1 <- 
+       filtered_DMRs %>%
+         map2_dfr(names(.), ~ tibble(
+           id            = paste0(y, "_", .y, "_gain"), 
+           filename      = paste0(y, "_", .y, "_gain.bed"), 
+           cellType      = "H9 or HNES1",
+           antibody      = x,
+           mappingGenome = "hg38",
+           dataSource    = "NME lab",
+           description   = paste0(x, " | ", str_replace(.y, ".vs.", " to "), " - GAIN")))
+           
+       loss_df1 <- 
+       filtered_DMRs %>%
+         map2_dfr(names(.), ~ tibble(
+           id            = paste0(y, "_", .y, "_loss"), 
+           filename      = paste0(y, "_", .y, "_loss.bed"), 
+           cellType      = "H9 or HNES1",
+           antibody      = x,
+           mappingGenome = "hg38",
+           dataSource    = "NME lab",
+           description   = paste0(x, " | ", str_replace(.y, ".vs.", " to "), " - LOSS")))
+       
+       purrr::reduce(list(gain_df1,loss_df1), rbind)
+       } else {
+         
+       gain_df2 <- 
+       dba_analyze[[x]] %>%
+         map2_dfr(names(.), ~ tibble(
+           id            = paste0(y, "_", .y, "_gain"), 
+           filename      = paste0(y, "_", .y, "_gain.bed"), 
+           cellType      = "H9 or HNES1",
+           antibody      = x,
+           mappingGenome = "hg38",
+           dataSource    = "NME lab",
+           description   = paste0(x, " | ", str_replace(.y, ".vs.", " to "), " - GAIN")))
+           
+       loss_df2 <- 
+       dba_analyze[[x]] %>%
+         map2_dfr(names(.), ~ tibble(
+           id            = paste0(y, "_", .y, "_loss"), 
+           filename      = paste0(y, "_", .y, "_loss.bed"), 
+           cellType      = "H9 or HNES1",
+           antibody      = x,
+           mappingGenome = "hg38",
+           dataSource    = "NME lab",
+           description   = paste0(x, " | ", str_replace(.y, ".vs.", " to "), " - LOSS")))
+       
+       purrr::reduce(list(gain_df2,loss_df2), rbind)
+       }
+       }) %>% unique %>% write_tsv("output/database/LOLA/LOLACustom/hg38/diffbind_peaks/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2021-10-27", source = "NME lab", description = "Diffbind results for each histone modification and accessibility assay with a absolute fold enrichment value > 2") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/diffbind_peaks/collection.txt")
+
+```
+
+# MACS2 peaks
+```{r}
+
+# Loading MACS2 peaks
+load("output/database/chipseq_atacseq_peaks.RData")
+
+# Saving MACS2 peaks as BED files
+macs_peaks_gr %>% 
+  as.data.frame() %>% 
+  named_group_split(seqtype) %>%
+  map2(names(.), function(x, y){ named_group_split(x, group) %>% 
+        map2(names(.), ~ makeGRangesFromDataFrame(.x, keep.extra.columns = T) %>%
+              rtracklayer::export.bed(con = paste0("output/database/LOLA/LOLACustom/hg38/chipseq_atacseq_peaks/regions/", y, "_", str_replace_all(.y, " ", "_"), ".bed")))})
+
+# Saving index.txt file
+macs_peaks_gr %>% 
+  as.data.frame() %>% 
+  named_group_split(seqtype) %>%
+  map2_dfr(names(.), function(x, y){ named_group_split(x, group) %>% 
+        map2_dfr(names(.), ~ tibble(
+                                 id            = paste0(y, "_", str_replace_all(.y, " ", "_")), 
+                                 filename      = paste0(y, "_", str_replace_all(.y, " ", "_"), ".bed"), 
+                                 cellType      = "H9 or HNES1",
+                                 antibody      = .y,
+                                 mappingGenome = "hg38",
+                                 dataSource    = "NME lab",
+                                 description   = paste0(y, " | ", .y)
+                                 ))}) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chipseq_atacseq_peaks/index.txt")
+
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2021-10-27", source = "NME lab", description = "ChIP-seq and ATAC-seq MACS2 peaks") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chipseq_atacseq_peaks/collection.txt")
+
+```
+
+# Repeat class and family
+```{r}
+
+# Saving Repeats as BED files
+genome_annotation$Repeats %>% as.data.frame() %>% mutate(repClass_repFamily = paste(repClass, repFamily, sep = "_")) %>% named_group_split(repClass_repFamily) %>% map2(names(.), ~ makeGRangesFromDataFrame(.x, keep.extra.columns = T) %>% rtracklayer::export.bed(con = paste0("output/database/LOLA/LOLACustom/hg38/repeats/regions/", .y, ".bed")))
+
+# Saving index.txt file
+genome_annotation$Repeats %>% as.data.frame() %>% mutate(repClass_repFamily = paste(repClass, repFamily, sep = "_")) %>% named_group_split(repClass_repFamily) %>% map2_dfr(names(.), ~
+tibble(
+       id            = .y, 
+       filename      = paste0(.y, ".bed"), 
+       mappingGenome = "hg38",
+       dataSource    = "UCSC",
+       description   = .y
+       )) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/repeats/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2021-10-27", source = "UCSC", description = "Repeats by class and family") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/repeats/collection.txt")
+
+```
+
+# Genome annotation
+```{r}
+
+# Saving genome annotations as BED files
+genome_annotation %>% map2(names(.), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/genome_annotation/regions/", str_replace_all(.y, "\\s|\\-|\\/", "_") %>% str_replace_all("\\(|\\)", "") %>% str_replace_all("'", ""), ".bed")))
+
+# Saving index.txt file
+tibble(
+       id            = list.files("output/database/LOLA/LOLACustom/hg38/genome_annotation/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " "), 
+       filename      = list.files("output/database/LOLA/LOLACustom/hg38/genome_annotation/regions/"), 
+       mappingGenome = "hg38",
+       dataSource    = "UCSC and Ensembl",
+       description   = list.files("output/database/LOLA/LOLACustom/hg38/genome_annotation/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " ")
+       ) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/genome_annotation/index.txt")
+
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2021-10-27", source = "UCSC and Ensembl", description = "Genome annotations") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/genome_annotation/collection.txt")
+
+```
+
+# CpG island type
+```{r}
+
+genome_annotation$`CpG islands`@seqinfo@genome[] <- "GRCh38"
+
+genome_annotation$`CpG islands` %>% 
+  as.data.frame() %>% 
+  arrange(width) %>% 
+  mutate(rank = cumsum(width)) %>% 
+  ggplot(aes(width, rank)) + 
+  geom_vline(xintercept = 1000) + 
+  geom_point() + 
+  scale_x_log10() + 
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+CGI_large       <- genome_annotation$`CpG islands` %>% as.data.frame() %>% filter(width > 1000) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+CGI_small       <- genome_annotation$`CpG islands` %>% as.data.frame() %>% filter(width <= 1000) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+CGI_TSS         <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$TSS)
+CGI_Gene_bodies <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$`Gene bodies`) %>% subsetByOverlaps(genome_annotation$TSS, invert = T)
+CGI_Introns     <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$Introns) %>% subsetByOverlaps(genome_annotation$TSS, invert = T)
+CGI_Exons       <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$Exons) %>% subsetByOverlaps(genome_annotation$TSS, invert = T)
+CGI_distal      <- genome_annotation$`CpG islands`[distanceToNearest(genome_annotation$`CpG islands`, genome_annotation$TSS) %>% as.data.frame() %>% filter(distance > 5000) %>% pull(queryHits) %>% unique]
+CGI_proximal    <- genome_annotation$`CpG islands`[distanceToNearest(genome_annotation$`CpG islands`, genome_annotation$TSS) %>% as.data.frame() %>% filter(distance <= 5000) %>% pull(queryHits) %>% unique]
+CGI_distal_naive_enhancers          <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$`Distal Naïve enhancers`)
+CGI_distal_naive_super_enhancers    <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$`Distal Naïve super-enhancers`)
+CGI_distal_primed_enhancers         <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$`Distal Primed enhancers`)
+CGI_distal_primed_super_enhancers   <- subsetByOverlaps(genome_annotation$`CpG islands`, genome_annotation$`Distal Primed super-enhancers`)
+
+genome_annotation$`CpG islands`@seqinfo@genome[] <- "hg38"
+CGI_bivalent_promoters <- 
+subsetByOverlaps(genome_annotation$`CpG islands`,
+c(genome_annotation$`Bivalent promoters HNES1 d0`, genome_annotation$`Bivalent promoters cR-H9 d0`, genome_annotation$`Bivalent promoters HNES1 d10`, genome_annotation$`Bivalent promoters cR-H9 d10`,  genome_annotation$`Bivalent promoters cR-H9 d20X`, genome_annotation$`Bivalent promoters cR-H9 d20E`, genome_annotation$`Bivalent promoters H9 Primed`)
+)
+
+CGI_type_list <- 
+list(
+"CGI_large"                         = CGI_large,
+"CGI_small"                         = CGI_small,
+"CGI_TSS"                           = CGI_TSS,
+"CGI_Gene_bodies"                   = CGI_Gene_bodies,
+"CGI_Introns"                       = CGI_Introns,
+"CGI_Exons"                         = CGI_Exons,
+"CGI_distal"                        = CGI_distal,
+"CGI_proximal"                      = CGI_proximal,
+"CGI_distal_naive_enhancers"        = CGI_distal_naive_enhancers,
+"CGI_distal_naive_super_enhancers"  = CGI_distal_naive_super_enhancers,
+"CGI_distal_primed_enhancers"       = CGI_distal_primed_enhancers,
+"CGI_distal_primed_super_enhancers" = CGI_distal_primed_super_enhancers,
+"CGI_bivalent_promoters"            = CGI_bivalent_promoters)
+
+# Saving CpG island annotations as BED files
+CGI_type_list %>% map2(names(.), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/CpG_islands/regions/", .y, ".bed")))
+
+# Saving index.txt file
+tibble(
+       id            = list.files("output/database/LOLA/LOLACustom/hg38/CpG_islands/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " "), 
+       filename      = list.files("output/database/LOLA/LOLACustom/hg38/CpG_islands/regions/"), 
+       mappingGenome = "hg38",
+       dataSource    = "Ensembl",
+       description   = list.files("output/database/LOLA/LOLACustom/hg38/CpG_islands/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " ")
+       ) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/CpG_islands/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2022-02-09", source = "UCSC", description = "CpG islands") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/CpG_islands/collection.txt")
+
+```
+
+# CpG island type
+```{r}
+
+Promoter_GCskew_strong   <- rtracklayer::import.bed("output/database/SkewR/strong.txt")
+Promoter_GCskew_weak     <- rtracklayer::import.bed("output/database/SkewR/weak.txt")
+Promoter_GCskew_noskew   <- rtracklayer::import.bed("output/database/SkewR/noskew.txt")
+Promoter_GCskew_bidirect <- rtracklayer::import.bed("output/database/SkewR/bidirect.txt")
+Promoter_GCskew_reverse  <- rtracklayer::import.bed("output/database/SkewR/reverse.txt")
+
+GCskew_list <- 
+list("Promoter_GCskew_strong"   = genome_annotation$Promoters[unique(Promoter_GCskew_strong$name)],
+     "Promoter_GCskew_weak"     = genome_annotation$Promoters[unique(Promoter_GCskew_weak$name)],
+     "Promoter_GCskew_noskew"   = genome_annotation$Promoters[unique(Promoter_GCskew_noskew$name)],
+     "Promoter_GCskew_bidirect" = genome_annotation$Promoters[unique(Promoter_GCskew_bidirect$name)],
+     "Promoter_GCskew_reverse"  = genome_annotation$Promoters[unique(Promoter_GCskew_reverse$name)])
+
+# Saving CpG island annotations as BED files
+GCskew_list %>% map2(names(.), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/GCskew/regions/", .y, ".bed")))
+
+# Saving index.txt file
+tibble(
+       id            = list.files("output/database/LOLA/LOLACustom/hg38/GCskew/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " "), 
+       filename      = list.files("output/database/LOLA/LOLACustom/hg38/GCskew/regions/"), 
+       mappingGenome = "hg38",
+       dataSource    = "Ensembl",
+       description   = list.files("output/database/LOLA/LOLACustom/hg38/GCskew/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " ")
+       ) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/GCskew/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2022-02-09", source = "UCSC", description = "CpG islands") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/GCskew/collection.txt")
+
+```
+
+# Chromosomes
+```{r}
+
+# Saving index.txt file
+tibble(
+       id            = list.files("output/database/LOLA/LOLACustom/hg38/chromosomes/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " "), 
+       filename      = list.files("output/database/LOLA/LOLACustom/hg38/chromosomes/regions/"), 
+       mappingGenome = "hg38",
+       dataSource    = "Ensembl",
+       description   = list.files("output/database/LOLA/LOLACustom/hg38/chromosomes/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " ")
+       ) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chromosomes/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2022-01-22", source = "Ensembl", description = "Chromosomes") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chromosomes/collection.txt")
+
+```
+
+# RNA-seq clusters
+```{r}
+
+load("output/database/rnaseq_DGE_clusters_cRH9.RData")
+
+promoters_cRH9_clusters <- 
+map(mfuzz_cRH9_clusters %>% named_group_split(CLUSTER) %>% map(~ pull(.x, gene_id) %>% unique) %>% set_names(names(.) %>% str_replace("(\\d)", "cR-H9 cluster \\1")),
+    ~ genome_annotation$Promoters %>% .[.$gene_id %in% .x]
+)
+
+
+load("output/database/rnaseq_DGE_clusters_HNES1.RData")
+
+promoters_HNES1_clusters <- 
+map(mfuzz_HNES1_clusters %>% named_group_split(CLUSTER) %>% map(~ pull(.x, gene_id) %>% unique) %>% set_names(names(.) %>% str_replace("(\\d)", "HNES1 cluster \\1")),
+    ~ genome_annotation$Promoters %>% .[.$gene_id %in% .x]
+)
+
+
+# Saving genome annotations as BED files
+promoters_cRH9_clusters %>% map2(names(.), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/regions/", str_replace_all(.y, "\\s|\\-|\\/", "_") %>% str_replace_all("\\(|\\)", "") %>% str_replace_all("'", ""), ".bed")))
+
+# Saving genome annotations as BED files
+promoters_HNES1_clusters %>% map2(names(.), ~ rtracklayer::export.bed(.x, con = paste0("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/regions/", str_replace_all(.y, "\\s|\\-|\\/", "_") %>% str_replace_all("\\(|\\)", "") %>% str_replace_all("'", ""), ".bed")))
+
+# Saving index.txt file
+tibble(
+       id            = list.files("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " "), 
+       filename      = list.files("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/regions/"), 
+       mappingGenome = "hg38",
+       dataSource    = "UCSC and Ensembl",
+       description   = list.files("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/regions/") %>% str_remove(".bed") %>% str_replace_all("_", " ")
+       ) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/index.txt")
+
+# Saving collection.txt file
+tibble(collector = "Joao Sousa", date = "2021-10-27", source = "UCSC and Ensembl", description = "Promoters from DGE gene clusters") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/promoters_rnaseq_clusters/collection.txt")
+
+```
+
+# Creating the LOLA Custom database
+```{r}
+
+RegionDB_custom <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACustom/hg38", useCache = F)
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

@@ -1,0 +1,336 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Differential peaks between conditions"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading BAM files and BED peak files for each histone modification
+```{r}
+
+####################
+# H3K27ac
+####################
+
+H3K27ac_bamfiles <- 
+  list.files("data/results/nf-core_results/chipseq_H3K27ac/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/chipseq_H3K27ac/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = ., bamControl = .[str_detect(., "INPUT")]) %>%
+  filter(str_detect(SampleID, "INPUT", negate = T))
+
+H3K27ac_peakfiles <-
+  list.files("data/results/nf-core_results/chipseq_H3K27ac/bwa/mergedLibrary/macs/narrowPeak", pattern = "_peaks.narrowPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., "_peaks.narrowPeak") %>% 
+              str_remove("data/results/nf-core_results/chipseq_H3K27ac/bwa/mergedLibrary/macs/narrowPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+H3K27ac_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "H3K27ac") %>% 
+  left_join(H3K27ac_bamfiles) %>% 
+  left_join(H3K27ac_peakfiles)
+
+
+
+####################
+# H3K27me3
+####################
+
+H3K27me3_bamfiles <- 
+  list.files("data/results/nf-core_results/chipseq_H3K27me3/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/chipseq_H3K27me3/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = ., bamControl = .[str_detect(., "INPUT")]) %>%
+  filter(str_detect(SampleID, "INPUT", negate = T))
+
+H3K27me3_peakfiles <-
+  list.files("data/results/nf-core_results/chipseq_H3K27me3/bwa/mergedLibrary/macs/broadPeak", pattern = "_peaks.broadPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., "_peaks.broadPeak") %>% 
+              str_remove("data/results/nf-core_results/chipseq_H3K27me3/bwa/mergedLibrary/macs/broadPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+H3K27me3_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "H3K27me3") %>% 
+  left_join(H3K27me3_bamfiles) %>% 
+  left_join(H3K27me3_peakfiles)
+
+
+
+####################
+# H3K9me3
+####################
+
+H3K9me3_bamfiles <- 
+  list.files("data/results/nf-core_results/chipseq_H3K9me3/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/chipseq_H3K9me3/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = ., bamControl = .[str_detect(., "INPUT")]) %>%
+  filter(str_detect(SampleID, "INPUT", negate = T))
+
+H3K9me3_peakfiles <-
+  list.files("data/results/nf-core_results/chipseq_H3K9me3/bwa/mergedLibrary/macs/broadPeak", pattern = "_peaks.broadPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., "_peaks.broadPeak") %>% 
+              str_remove("data/results/nf-core_results/chipseq_H3K9me3/bwa/mergedLibrary/macs/broadPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+H3K9me3_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "H3K9me3") %>% 
+  left_join(H3K9me3_bamfiles) %>% 
+  left_join(H3K9me3_peakfiles)
+
+
+
+
+####################
+# H3K4me3
+####################
+
+H3K4me3_bamfiles <- 
+  list.files("data/results/nf-core_results/chipseq_H3K4me3/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/chipseq_H3K4me3/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = ., bamControl = .[str_detect(., "INPUT")]) %>%
+  filter(str_detect(SampleID, "INPUT", negate = T))
+
+H3K4me3_peakfiles <-
+  list.files("data/results/nf-core_results/chipseq_H3K4me3/bwa/mergedLibrary/macs/narrowPeak", pattern = "_peaks.narrowPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., "_peaks.narrowPeak") %>% 
+              str_remove("data/results/nf-core_results/chipseq_H3K4me3/bwa/mergedLibrary/macs/narrowPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+H3K4me3_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "H3K4me3") %>% 
+  left_join(H3K4me3_bamfiles) %>% 
+  left_join(H3K4me3_peakfiles)
+
+
+
+
+####################
+# H3K4me1
+####################
+
+H3K4me1_bamfiles <- 
+  list.files("data/results/nf-core_results/chipseq_H3K4me1/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/chipseq_H3K4me1/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = ., bamControl = .[str_detect(., "INPUT")]) %>%
+  filter(str_detect(SampleID, "INPUT", negate = T))
+
+H3K4me1_peakfiles <-
+  list.files("data/results/nf-core_results/chipseq_H3K4me1/bwa/mergedLibrary/macs/broadPeak", pattern = "_peaks.broadPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., "_peaks.broadPeak") %>% 
+              str_remove("data/results/nf-core_results/chipseq_H3K4me1/bwa/mergedLibrary/macs/broadPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+H3K4me1_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "H3K4me1") %>% 
+  left_join(H3K4me1_bamfiles) %>% 
+  left_join(H3K4me1_peakfiles)
+
+
+
+
+####################
+# atacseq
+####################
+
+atacseq_bamfiles <- 
+  list.files("data/results/nf-core_results/atacseq/bwa/mergedLibrary", pattern = ".bam$", full.names = T) %>% 
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN.sorted.bam") %>%
+              str_remove("data/results/nf-core_results/atacseq/bwa/mergedLibrary/") %>%
+              str_replace("_R", "_rep") %>%
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>%
+              str_replace("H9_EOS", "H9-EOS")) %>%
+  tibble(SampleID = names(.), bamReads = .)
+
+atacseq_peakfiles <-
+  list.files("data/results/nf-core_results/atacseq/bwa/mergedLibrary/macs/broadPeak", pattern = "_peaks.broadPeak", full.names = T) %>%
+  .[str_detect(., "_d3_", negate = T)] %>% 
+  set_names(str_remove(., ".mLb.clN_peaks.broadPeak") %>% 
+              str_remove("data/results/nf-core_results/atacseq/bwa/mergedLibrary/macs/broadPeak/") %>% 
+              str_replace("_R", "_rep") %>% 
+              str_replace("cR_H9_EOS", "cR-H9-EOS") %>% 
+              str_replace("H9_EOS", "H9-EOS")) %>% 
+  tibble(SampleID = names(.), Peaks = .)
+
+atacseq_metadata <-
+  RNAseq_metadata %>% 
+  select(-file, -color, -cell) %>% 
+  unique %>% 
+  filter(day %in% c(0, 10, "20X", "20E", "H9-EOS")) %>% 
+  filter(!group %in% c("HNES1 d20E", "HNES1 d20X")) %>% 
+  filter(replicate %in% 1:2) %>% 
+  dplyr::rename(SampleID = sample_id, Tissue = group, Condition = day, Replicate = replicate) %>% 
+  mutate(PeakCaller = "macs", Factor = "atacseq") %>% 
+  left_join(atacseq_bamfiles) %>% 
+  left_join(atacseq_peakfiles)
+
+```
+
+# DiffBind analysis
+```{r}
+
+# DBA objects
+atacseq_diffbind_dba  <- dba(sampleSheet = atacseq_metadata)
+H3K27ac_diffbind_dba  <- dba(sampleSheet = H3K27ac_metadata)
+H3K27me3_diffbind_dba <- dba(sampleSheet = H3K27me3_metadata)
+H3K4me1_diffbind_dba  <- dba(sampleSheet = H3K4me1_metadata)
+H3K4me3_diffbind_dba  <- dba(sampleSheet = H3K4me3_metadata)
+H3K9me3_diffbind_dba  <- dba(sampleSheet = H3K9me3_metadata)
+
+# DBA counts
+atacseq_diffbind_dba_count  <- dba.count(DBA = atacseq_diffbind_dba , bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 200)
+H3K27ac_diffbind_dba_count  <- dba.count(DBA = H3K27ac_diffbind_dba , bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 200)
+H3K27me3_diffbind_dba_count <- dba.count(DBA = H3K27me3_diffbind_dba, bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 500)
+H3K4me1_diffbind_dba_count  <- dba.count(DBA = H3K4me1_diffbind_dba , bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 500)
+H3K4me3_diffbind_dba_count  <- dba.count(DBA = H3K4me3_diffbind_dba , bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 200)
+H3K9me3_diffbind_dba_count  <- dba.count(DBA = H3K9me3_diffbind_dba , bParallel = T, bUseSummarizeOverlaps = TRUE, summits = 500)
+
+# DBA normalize
+atacseq_dba_normalize  <- dba.normalize(DBA = atacseq_diffbind_dba_count)
+H3K27ac_dba_normalize  <- dba.normalize(DBA = H3K27ac_diffbind_dba_count)
+H3K27me3_dba_normalize <- dba.normalize(DBA = H3K27me3_diffbind_dba_count)
+H3K4me1_dba_normalize  <- dba.normalize(DBA = H3K4me1_diffbind_dba_count)
+H3K4me3_dba_normalize  <- dba.normalize(DBA = H3K4me3_diffbind_dba_count)
+H3K9me3_dba_normalize  <- dba.normalize(DBA = H3K9me3_diffbind_dba_count)
+
+# DBA analyze
+dba_analyze <- 
+map(list(
+  "ATAC-Seq" = atacseq_dba_normalize,
+  "H3K27ac"  = H3K27ac_dba_normalize,
+  "H3K27me3" = H3K27me3_dba_normalize,
+  "H3K4me1"  = H3K4me1_dba_normalize,
+  "H3K4me3"  = H3K4me3_dba_normalize,
+  "H3K9me3"  = H3K9me3_dba_normalize
+  ), function(x){  
+list(
+"HNES1_d0.vs.HNES1_d10"            = c("HNES1 d0", "HNES1 d10"),
+"HNES1_d0.vs.H9_EOS"               = c("HNES1 d0", "H9-EOS"),
+"HNES1_d10.vs.H9_EOS"              = c("HNES1 d10", "H9-EOS"),
+
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d10"    = c("cR-H9-EOS d0", "cR-H9-EOS d10"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20X"   = c("cR-H9-EOS d0", "cR-H9-EOS d20X"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20E"   = c("cR-H9-EOS d0", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d0.vs.H9_EOS"           = c("cR-H9-EOS d0", "H9-EOS"),
+
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20X"  = c("cR-H9-EOS d10", "cR-H9-EOS d20X"),
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20E"  = c("cR-H9-EOS d10", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d10.vs.H9_EOS"          = c("cR-H9-EOS d10", "H9-EOS"),
+
+"cR_H9_EOS_d20X.vs.cR_H9_EOS_d20E" = c("cR-H9-EOS d20X", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d20X.vs.H9_EOS"         = c("cR-H9-EOS d20X", "H9-EOS"),
+
+"cR_H9_EOS_d20E.vs.H9_EOS"         = c("cR-H9-EOS d20E", "H9-EOS")
+) %>% map(~ dba.contrast(x, group1 = x$masks[[.x[1]]], group2 = x$masks[[.x[2]]]) %>% dba.analyze(bBlacklist = F, bGreylist = F))
+})
+
+```
+
+# Saving plots
+```{r}
+
+save(dba_analyze, file = "output/database/differential_peaks_dba_analyze.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

@@ -1,0 +1,93 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "ChromHMM concatenated - Comparing models"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Heatmap of model comparison
+```{r}
+
+compare_models_concatenated_heatmap <- 
+read_tsv("data/results/ChromHMM/concatenated_all_samples/compare_models/concatenated_all_samples_1_to_40.txt") %>%
+  gather(key, value, -State) %>% 
+  mutate(State = factor(State, levels = 1:40)) %>% 
+  mutate(key = str_remove(key, "emissions_")) %>%
+  mutate(key = str_remove(key, ".txt")) %>%
+  mutate(key = factor(key, levels = 1:40)) %>%
+  ggplot(aes(key, fct_reorder(State, dplyr::desc(State)), fill = value)) +
+  geom_tile(color = "black") +
+  scale_y_discrete(expand = c(0,0), breaks = seq(1, 40, 1)) +
+  scale_x_discrete(expand = c(0,0), position = "top", breaks = seq(1, 40, 1)) +
+  scale_fill_stepsn(n.breaks = 7, colours = brewer.pal(n = 11, name = "RdYlBu")[c(1, 2, 3, 5, 6, 7, 9, 10, 11)]) +
+  labs(fill = "Correlation", x = "Number of states in the 40 state model", y = "Model")
+
+```
+
+# Barplot of model comparison
+```{r}
+
+compare_models_concatenated_barplot <- 
+read_tsv("data/results/ChromHMM/concatenated_all_samples/compare_models/concatenated_all_samples_1_to_40.txt") %>%
+  gather(key, value, -State) %>% 
+  mutate(State = factor(State, levels = 1:40)) %>% 
+  mutate(key = str_remove(key, "emissions_")) %>%
+  mutate(key = str_remove(key, ".txt")) %>%
+  mutate(key = factor(key, levels = 1:40)) %>%
+  mutate(value = cut(value, breaks = seq(-1, 1, 0.1))) %>%
+  group_by(key, value) %>%
+  summarise(number_of_states = n()) %>%
+  ungroup() %>% 
+  ggplot(aes(key, number_of_states, fill = value)) +
+  geom_col(color = "black", size = 0.5) +
+  scale_fill_discrete() +
+  labs(fill = "Correlation", y = "Number of states in the 40 state model", x = "Model") +
+  scale_y_continuous(expand = c(0,0), breaks = seq(1, 40, 1)) +
+  scale_x_discrete(expand = c(0,0), position = "top", breaks = seq(1, 40, 1)) +
+  theme(legend.position  = "right",
+        legend.direction = "vertical",
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border     = element_blank()) 
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/compare_models_concatenated_1.svg", width = 8, height = 5)
+pdf(file = "output/figures/03_condition_comparison/compare_models_concatenated_1.pdf", width = 8, height = 5)
+compare_models_concatenated_heatmap
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/compare_models_concatenated_2.svg", width = 8, height = 5)
+pdf(file = "output/figures/03_condition_comparison/compare_models_concatenated_2.pdf", width = 8, height = 5)
+compare_models_concatenated_barplot
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

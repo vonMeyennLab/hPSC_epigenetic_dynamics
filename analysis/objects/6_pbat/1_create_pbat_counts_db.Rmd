@@ -1,0 +1,81 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Create PBAT counts database"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Reading methylation files and saving them
+```{r}
+# ------------------------------------------------ #
+PBATdb <-
+  methylKit::methRead(
+                             location   = as.list(PBAT_metadata$file),
+                             sample.id  = as.list(PBAT_metadata$sample_id),
+                             assembly   = "hg38",
+                             header     = FALSE,
+                             treatment  = PBAT_metadata$group %>% as.factor() %>% as.numeric(),
+                             pipeline   = "bismarkCoverage",
+                             dbdir      = "output/database",
+                             dbtype     = "tabix",
+                             context    = "CpG",
+                             resolution = "base",
+                             mincov     = 1
+                             )
+# ------------------------------------------------ #
+
+# ------------------------------------------------ #
+## Descriptive statistics on samples
+methylation_stats <- 
+getMethylationStats(PBATdb[[16]], plot = FALSE, both.strands = FALSE)
+
+coverage_stats <- 
+map(PBATdb, ~ getCoverageStats(.x, plot = FALSE, both.strands = FALSE))
+# ------------------------------------------------ #
+
+# ------------------------------------------------ #
+## Filtering samples based on read coverage
+PBATdb_filtered  <- filterByCoverage(
+  PBATdb,
+  lo.count = 1,
+  lo.perc = NULL,
+  hi.count = NULL,
+  hi.perc = 99.9,
+  save.db = T
+)
+# ------------------------------------------------ #
+
+```
+
+# Normalizing the filtered reads
+```{r}
+
+# Coverage normalization
+PBATdb_filtered_normalized <- 
+methylKit::normalizeCoverage(PBATdb_filtered, method = "median", save.db = TRUE, mc.cores = 40)
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

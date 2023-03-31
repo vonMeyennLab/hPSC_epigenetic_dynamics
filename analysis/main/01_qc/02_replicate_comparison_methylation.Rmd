@@ -1,0 +1,75 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Comparison between replicates methylation distribution"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading data
+```{r}
+
+load(file = "output/database/counts_in_windows_200CpGs.RData")
+
+```
+
+# Methylation percentage distribution plot
+```{r}
+
+meth_dist_plot <- 
+  PBAT_meth_ratio %>% 
+  as.data.frame() %>%
+  gather(sample_id, meth_ratio) %>% 
+  filter(str_detect(sample_id, "d3", negate = T)) %>% 
+  left_join(unique(PBAT_metadata[, c("sample_id", "group", "color", "day", "cell")]), by = "sample_id") %>%
+  arrange(day) %>% 
+  mutate(sample_id = str_remove(sample_id, "-EOS") %>% str_replace_all("_", " ") %>% str_replace("^H9", "H9 Primed")) %>% 
+  mutate(sample_id = factor(sample_id, levels = unique(sample_id))) %>% 
+  ggplot(aes(sample_id, meth_ratio*100, fill = color)) + 
+  geom_violin(scale = "width", na.rm = T, draw_quantiles = F, trim = T, show.legend = F) + 
+  stat_summary(
+    fun.min = function(z) { quantile(z,0.25) },
+    fun.max = function(z) { quantile(z,0.75) },
+    fun     = median, 
+    na.rm   = T, 
+    size    = 0.5) +
+  theme_publication() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.text.x      = element_text(hjust = 1, vjust = 1, angle = 45)) +
+  labs(x = "", y = "Methylation percentage (%)") +
+  scale_fill_identity(aes(color))
+
+```
+
+# Saving plot
+```{r}
+
+svg(filename = "output/figures/01_qc/meth_dist_plot.svg", width = 8, height = 3.5)
+meth_dist_plot
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

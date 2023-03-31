@@ -1,0 +1,142 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "X chromosome analysis - ChIP-seq and ATAC-seq peaks"
+author:   "João Pedro Agostinho de Sousa"
+date:     "September 17, 2020"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# ChIP-Seq and ATAC-Seq peaks
+```{r}
+
+load(file = "output/database/chipseq_atacseq_peaks.RData")
+
+```
+
+# Percentage of peaks in each chromosome
+```{r}
+
+macs_peaks_percentage <-  macs_peaks_gr %>%
+                          as.data.frame() %>% 
+                          filter(!day %in% 3) %>% 
+                          select(seqtype, cell, day, color, group, sample_id, seqnames) %>% 
+                          group_by(seqtype, cell, day, color, group, sample_id) %>% 
+                          add_count(name = "n_peaks") %>% 
+                          ungroup() %>% 
+                          group_by(seqtype, cell, day, color, group, sample_id, n_peaks, seqnames) %>% 
+                          count(name = "n_peaks_chr") %>% 
+                          ungroup() %>%
+                          mutate(pct_peak_chr = 100*(n_peaks_chr/n_peaks)) %>% 
+                          arrange(cell, day) %>% 
+                          mutate(group = factor(group, levels = unique(group))) %>% 
+                          mutate(seqnames = factor(seqnames, levels = c(1:22, "X", "Y")))
+
+plot_peaks_percentage_by_chr <- 
+  macs_peaks_percentage %>%
+  filter(seqnames %in% c(1:22, "X", "Y")) %>%
+  mutate(cell_color = case_when(cell == "cR-H9-EOS" ~ "#EA2820", cell == "HNES1" ~ "#2A7AB9", cell == "H9-EOS" ~ "darkgray")) %>% 
+  ggplot(aes(seqnames, pct_peak_chr, color = cell_color, group = cell)) +
+  stat_summary(fun = mean, geom = "line", size = 1.5, color = "black") +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(aes(width = 0.5), fun.data = mean_se, geom = "errorbar", size = 0.5, color = "black") +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+  stat_summary(fun = mean, geom = "point", size = 2.5) +
+  scale_color_identity(aes(cell_color)) +
+  theme_publication() +
+  labs(x = "Chromosome", y = "Peak percentage (%)") +
+  facet_grid(seqtype ~ .)
+
+```
+
+# Percentage of peaks in the X-chromosome
+```{r}
+
+macs_peaks_percentage_chrX <- 
+  macs_peaks_percentage %>% 
+  filter(seqnames == "X") %>% 
+  group_by(seqtype, group) %>%
+  mutate(mean_pct_peak_chr = mean(pct_peak_chr)) %>%
+  ungroup() %>%
+  mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+  mutate(group = factor(group, levels = c("HNES1 d0","cR-H9 d0", "HNES1 d10","cR-H9 d10", "HNES1 d20X", "cR-H9 d20X", "HNES1 d20E","cR-H9 d20E","H9 Primed")))
+
+plot_peaks_percentage_chrX_1 <-
+ggplot(data = macs_peaks_percentage_chrX %>% filter(seqtype %in% c("H3K27me3", "H3K9me3")),
+       mapping = aes(group, pct_peak_chr, fill = color)) +
+  geom_col(data = macs_peaks_percentage_chrX %>% filter(seqtype %in% c("H3K27me3", "H3K9me3")) %>% select(seqtype, group, color, mean_pct_peak_chr) %>% unique,
+           mapping = aes(y = mean_pct_peak_chr),
+           position = position_dodge2(width = 0.8, reverse = FALSE),
+           color = "black") +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               position = position_dodge2(width = 0, reverse = FALSE),
+               show.legend = F,
+               color = "black",
+               width = 0.4) +
+  theme_publication() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  scale_fill_identity(aes(color)) +
+  scale_color_identity(aes(color)) +
+  scale_y_continuous(limits = c(0, 45)) +
+  labs(x = "", y = "Percentage of peaks (%)") +
+  facet_grid(~ seqtype)
+
+plot_peaks_percentage_chrX_2 <-
+ggplot(data = macs_peaks_percentage_chrX %>% filter(!seqtype %in% c("H3K27me3", "H3K9me3")),
+       mapping = aes(group, pct_peak_chr, fill = color)) +
+  geom_col(data = macs_peaks_percentage_chrX %>% filter(!seqtype %in% c("H3K27me3", "H3K9me3")) %>% select(seqtype, group, color, mean_pct_peak_chr) %>% unique,
+           mapping = aes(y = mean_pct_peak_chr),
+           position = position_dodge2(width = 0.8, reverse = FALSE),
+           color = "black") +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               position = position_dodge2(width = 0, reverse = FALSE),
+               show.legend = F,
+               color = "black",
+               width = 0.4) +
+  theme_publication() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  scale_fill_identity(aes(color)) +
+  scale_color_identity(aes(color)) +
+  scale_y_continuous(limits = c(0, 45)) +
+  labs(x = "", y = "Percentage of peaks (%)") +
+  facet_grid(~ seqtype)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/X_chromosome_2.svg", width = 6, height = 6)
+plot_peaks_percentage_by_chr
+dev.off()
+
+
+svg(filename = "output/figures/03_condition_comparison/X_chromosome_3.svg", width = 7.25, height = 7)
+plot_peaks_percentage_chrX_1 / plot_peaks_percentage_chrX_2 + plot_layout(heights = c(1, 0.5), widths = c(1, 1))
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

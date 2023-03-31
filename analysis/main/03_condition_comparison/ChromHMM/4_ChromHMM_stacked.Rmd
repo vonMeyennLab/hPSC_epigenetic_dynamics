@@ -1,0 +1,332 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "ChromHMM stacked"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Emission states
+```{r}
+
+# loading the emission data and converting into a matrix
+emissions_data <- 
+  read_tsv("data/results/ChromHMM/stacked_all_samples/model/emissions_13.txt") %>%
+  column_to_rownames("State (Emission order)") %>%
+  `*`(100) %>%
+  as.matrix()
+
+# renaming the emission data columns
+df_to_rename_order_sample_id <- 
+  colnames(emissions_data) %>%
+  tibble::enframe(name = NULL) %>%
+  dplyr::rename(sample_id = value) %>%
+  mutate(seqtype = str_extract(sample_id, "H3K9me3|H3K27ac|H3K27me3|H3K4me3|H3K4me1|ATAC-Seq")) %>%
+  mutate(cell    = str_extract(sample_id, "cR_H9_EOS|HNES1|H9_EOS") %>% 
+                   factor(levels = c("HNES1", "cR_H9_EOS", "H9_EOS"))) %>%
+  mutate(day     = str_extract(sample_id, "_0_|_10_|_20X_|_20E_|^H9_EOS") %>% 
+                   str_remove_all("_") %>% 
+                   factor(levels = c(0, 10, "20X", "20E", "H9EOS"))) %>%
+  mutate(seqtype = factor(seqtype, level = c("ATAC-Seq", "H3K4me3", "H3K27ac", "H3K4me1", "H3K27me3", "H3K9me3"))) %>%
+  arrange(seqtype, day, cell)
+
+# ordering the columns of the emissions data
+column_order <- match(df_to_rename_order_sample_id$sample_id, colnames(emissions_data))
+
+# reordering the emissions data to cluster similar states in the heatmap
+emissions_data_reordered <- emissions_data[, column_order] %>% set_rownames(1:nrow(.))
+
+# renaming the columns
+colnames(emissions_data_reordered) <- 
+                                      colnames(emissions_data_reordered) %>%
+                                      str_remove("_H3K9me3|_H3K27ac|_H3K27me3|_H3K4me3|_H3K4me1|_ATAC-Seq") %>%
+                                      str_replace_all("_", "-") %>%
+                                      str_replace("-(?=\\d+[EX]?)", " d")
+
+# colors for the emission heatmap
+emissions_heatmap_colors <-
+  circlize::colorRamp2(c(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100), c(rev(brewer.pal(n = 11, name = "RdBu")[c(2,2,3,4,5,6,7,8,9,11,11)])))
+
+# Changing group names
+colnames(emissions_data_reordered) <- colnames(emissions_data_reordered) %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+
+# Heatmap of the emission states
+set.seed(123)
+
+ht_emissions <-
+ComplexHeatmap::Heatmap(matrix                 = emissions_data_reordered,
+                        name                   = "Observation frequency (%)",
+                        col                    = emissions_heatmap_colors,
+                        cluster_rows           = F,
+                        cluster_columns        = F,
+                        column_split           = rep(1:6, each = 7),
+                        column_title           = unique(df_to_rename_order_sample_id$seqtype),
+                        row_names_side         = "left",
+                        row_title              = "States",
+                        column_names_gp        = grid::gpar(fontsize = 10),
+                        column_names_rot       = 45,
+                        column_names_centered  = F,
+                        column_names_side      = "bottom",
+                        show_heatmap_legend    = T,
+                        heatmap_legend_param   = list(direction = "horizontal"),
+                        rect_gp                = grid::gpar(col = "black"),
+                        cell_fun               = function(j, i, x, y, width, height, fill) {
+                          grid::grid.text(sprintf("%.0f", emissions_data_reordered[i, j]), x, y, gp = grid::gpar(fontsize = 7, col = NA))
+})
+
+```
+
+# Fold enrichment with annotated regions
+```{r}
+
+segments_gr <- 
+read_tsv("data/results/ChromHMM/stacked_all_samples/segmentation/GRCh38_13_segments.bed", col_names = F) %>%
+  filter(X1 %in% c(1:22, "X", "Y")) %>% 
+  dplyr::rename(chr = X1, start = X2, end = X3, state = X4) %>%
+  mutate(start = start + 1) %>%
+  mutate(state = str_remove(state, "E")) %>% 
+  named_group_split(state) %>% 
+  map(~ makeGRangesFromDataFrame(.x, keep.extra.columns = T))
+
+# Loading LOLA Core databases
+RegionDB_LOLACore <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACore/hg38", useCache = T)
+
+# Loading LOLA custom databases
+RegionDB_custom <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACustom/hg38", useCache = F)
+
+# Loading LOLA database
+RegionDB_LOLAExt  <- loadRegionDB(dbLocation = "output/database/LOLA/LOLAExt/hg38", useCache = T, collections = "jaspar_motifs")
+
+# USERSET
+userSets <- GRangesList(segments_gr)
+  
+# UNIVERSE
+universeSets <- unlist(userSets)
+
+# LOLAcustom results
+LOLAcustom_results <- runLOLA(userSets, universeSets, RegionDB_custom, cores = 10, direction = "enrichment")
+
+# LOLACore results
+seqlevelsStyle(userSets) <- "UCSC"
+seqlevelsStyle(universeSets) <- "UCSC"
+LOLACore_results <- runLOLA(userSets, universeSets, RegionDB_LOLACore, cores = 10, direction = "enrichment")
+
+# LOLAExt results
+seqlevelsStyle(userSets) <- "UCSC"
+seqlevelsStyle(universeSets) <- "UCSC"
+LOLAExt_results <- runLOLA(userSets, universeSets, RegionDB_LOLAExt, cores = 10, direction = "enrichment")
+
+# Enrichment heatmap
+enrichment_data <- 
+  rbind(as.data.frame(LOLAcustom_results), as.data.frame(LOLACore_results), as.data.frame(LOLAExt_results)) %>%
+  filter(collection %in% c("genome_annotation", "genome_annotation", "ucsc_features", "repeats", "chromosomes")) %>%
+  mutate(collection = case_when(
+         collection == "genome_annotation" & str_detect(description, "enhancer") ~ "Enhancers",
+         collection == "genome_annotation" & str_detect(description, "Promoter") ~ "Promoters",
+         collection == "genome_annotation" & str_detect(description, "CpG|CGI")  ~ "CpG islands",
+         TRUE ~ collection)) %>% 
+  mutate(collection = 
+           str_replace(collection, "repeats", "Repeats") %>%
+           str_replace("genome_annotation", "Genome annotation") %>%
+           str_replace("ucsc_features", "UCSC features") %>%
+           str_replace("chromosomes", "Chromosomes")) %>%
+  mutate(collection = factor(collection, levels = c("Genome annotation", "CpG islands", "Promoters", "Enhancers", "UCSC features", "Repeats", "Chromosomes"))) %>% 
+  filter(!str_detect(description, "TSS|CDS|bodies")) %>%
+  mutate(description = str_replace(description, "chromosome", "Chromosome")) %>%
+  mutate(description = str_replace(description, "CGI inter", "Outside CGIs")) %>%
+  filter(qValue < 0.05) %>%
+  filter(pValueLog > 2) %>%
+  mutate(userSet = factor(userSet, levels = 1:13)) %>% 
+  group_by(userSet, collection, description) %>% 
+           summarize(pValueLog = mean(pValueLog), oddsRatio = mean(oddsRatio), qValue = mean(qValue)) %>% 
+           ungroup %>% 
+  arrange(collection, userSet, pValueLog, oddsRatio) %>% 
+  mutate(description = factor(description, levels = unique(description))) %>% 
+  ungroup
+  
+  
+# Fold enrichment pvalue
+enrichment_data_pvalue_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(collection %in% c("Genome annotation", "Enhancers", "Chromosomes", "CpG islands", "Promoters")) %>%
+  select(-oddsRatio, -qValue, -collection) %>% 
+  arrange(dplyr::desc(pValueLog)) %>%
+  spread(description, pValueLog) %>% 
+  #arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# Fold enrichment oddsRatio
+enrichment_data_oddsRatio_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>%
+  mutate(oddsRatio = log2(oddsRatio)) %>% 
+  filter(collection %in% c("Genome annotation", "Enhancers", "Chromosomes", "CpG islands", "Promoters")) %>% 
+  select(-pValueLog, -qValue, -collection) %>% 
+  arrange(dplyr::desc(oddsRatio)) %>% 
+  spread(description, oddsRatio) %>% 
+  #arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# color function
+col_fun <- circlize::colorRamp2(c(0, .5, 2, 6), colors = c("lightblue", "white", "red", "darkred"))
+
+enrichment_ht_1 <- 
+ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_1, 
+                        name             = "Log2(odds ratio)",
+                        col              = col_fun,
+                        cluster_rows     = F,
+                        cluster_columns  = T,
+                        column_names_rot = 45,
+                        column_names_gp  = grid::gpar(fontsize = 10),
+                        border           = "black",
+                        rect_gp          = gpar(col = "gray", fill = NA),
+                        cell_fun         = function(j, i, x, y, width, height, fill) {
+                          grid.circle(x  = x, 
+                                      y  = y, 
+                                      r  = enrichment_data_pvalue_1[i, j]/10000,
+                                      gp = gpar(fill = col_fun(enrichment_data_oddsRatio_1[i, j]), col = "black"))
+                          })
+
+```
+
+# Methylation percentage for each state
+```{r}
+
+# Loading 200CpGs regions methylation ratio
+load("output/database/counts_in_windows_200CpGs.RData")
+
+PBAT_meth_ratio <- 
+  PBAT_meth_ratio %>%
+  .[, !str_detect(colnames(.), "d3")] %>% 
+  .[!str_detect(rownames(.), "X:|Y:"), ] %>%
+  as.data.frame() %>% 
+  rownames_to_column("position") %>%
+  gather(sample_id, meth_perc, -position) %>%
+  left_join(unique(PBAT_metadata[, c("sample_id", "group")]), by = "sample_id") %>%
+  group_by(group, position) %>%
+  summarise(Methylation = mean(meth_perc, na.rm = TRUE)) %>%
+  ungroup
+
+# Annotate methylation regions that overlap with the ChromHMM states
+PBAT_meth_ratio_annotated <- 
+annotate_regions(genomic_regions             = (PBAT_meth_ratio %>% tidyr::separate(col = "position", into = c("chr", "start", "end"), sep = ":") %>% makeGRangesFromDataFrame(keep.extra.columns = T)),
+                 annotation_list             = GRangesList(segments_gr),
+                 with_duplicated_annotations = T,
+                 apply_GRanges_reduce        = F)
+
+
+# colors for the methylation heatmap
+methylation_heatmap_colors <- circlize::colorRamp2(c(0, .10, .20, .30, .40, .50, .60, .70, .80, .90, 1), c(rev(brewer.pal(n = 11, name = "RdBu")[c(1,1,3,5,6,7,9,10,11,11,11)])))
+
+ht_methylation <- 
+  PBAT_meth_ratio_annotated %>%
+  mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+  mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>% 
+  group_by(group, annotation) %>%
+  summarise(Methylation = mean(Methylation, na.rm = T)) %>%
+  ungroup %>%
+  na.omit() %>% 
+  spread(group, Methylation) %>%
+  mutate(annotation = factor(annotation, levels = 1:13)) %>% 
+  arrange(annotation) %>% 
+  column_to_rownames("annotation") %>%
+  as.matrix %>% 
+  ComplexHeatmap::Heatmap(name                   = "Methylation percentage (%)",
+                          col                    = methylation_heatmap_colors,
+                          cluster_rows           = F,
+                          cluster_columns        = F,
+                          column_title           = "Methylation",
+                          row_names_side         = "left",
+                          row_title              = "States",
+                          column_names_gp        = grid::gpar(fontsize = 10),
+                          column_names_rot       = 45,
+                          column_names_centered  = F,
+                          column_names_side      = "bottom",
+                          show_heatmap_legend    = T,
+                          heatmap_legend_param   = list(direction = "horizontal"),
+                          rect_gp                = grid::gpar(col = "black"))
+
+```
+
+# Genome percentage
+```{r}
+
+# colors for the genome percentage heatmap
+genome_pct_heatmap_colors <- circlize::colorRamp2(c(0.5,1,1.5,2,2.5,3,3.5,4,50,75,100), c(rev(brewer.pal(n = 11, name = "RdBu"))))
+
+# Matrix to make the heatmap
+genome_pct_ht_data <- 
+  map_dfc(segments_gr, ~ GenomicRanges::reduce(.x) %>% as.data.frame() %>% pull(width) %>% sum) %>%
+  t %>%
+  as.data.frame() %>%
+  dplyr::rename(width = V1) %>%
+  mutate(width = width*100/sum(width)) %>%
+  rownames_to_column("states") %>%
+  mutate(states = factor(states, levels = 1:13)) %>% arrange(states) %>% 
+  column_to_rownames("states") %>%
+  as.matrix() 
+
+ht_genome_pct <-
+ComplexHeatmap::Heatmap(matrix                 = genome_pct_ht_data,
+                        name                   = "Genome percentage (%)",
+                        col                    = genome_pct_heatmap_colors,
+                        cluster_rows           = F,
+                        cluster_columns        = F,
+                        show_column_names      = F,
+                        column_title           = "Genome (%)",
+                        row_names_side         = "left",
+                        row_title              = "States",
+                        column_names_gp        = grid::gpar(fontsize = 10),
+                        column_names_rot       = 45,
+                        column_names_centered  = F,
+                        column_names_side      = "bottom",
+                        show_heatmap_legend    = T,
+                        heatmap_legend_param   = list(direction = "horizontal"),
+                        rect_gp                = grid::gpar(col = "black"),
+                        cell_fun               = function(j, i, x, y, width, height, fill) {
+                        grid::grid.text(sprintf("%.1f", genome_pct_ht_data[i, j]), x, y, gp = grid::gpar(fontsize = 8, col = "black"))
+})
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/ChromHMM_stacked_1.svg", width = 14, height = 4)
+ht_emissions + ht_methylation + ht_genome_pct
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/ChromHMM_stacked_2.svg", width = 9, height = 6.5)
+enrichment_ht_1
+dev.off()
+
+```
+
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

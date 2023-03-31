@@ -1,0 +1,236 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Human imprints analysis"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading metadata
+```{r}
+
+# Metadata from the Human imprints file
+HumanImprints_metadata <- 
+  read_tsv("analysis/objects/3_annotation/human_imprints/HumanImprintsGRCh38_liftover_GRCh37.txt") %>% 
+  as_tibble() %>% 
+  dplyr::rename(Probe = Gene) %>% 
+  mutate(Probe = make.unique(Probe))
+
+# Metadata from the seqmonk files
+seqmonk_metadata <- 
+  list.files("analysis/main/03_condition_comparison/human_imprints/seqmonk_results/imprints", full.names = T) %>% 
+  map(read_tsv) %>% 
+  set_names(list.files("analysis/main/03_condition_comparison/human_imprints/seqmonk_results/imprints") %>% str_remove("_EdgeR_p0.05.txt")) %>%
+  .[[1]] %>%   
+  select(c("Probe", "Chromosome", "Start", "End", "Probe Strand", "Feature", "ID", "Description", "Feature Strand", "Type", "Feature Orientation", "Distance")) %>% 
+  mutate(Probe = make.unique(Probe)) %>% 
+  dplyr::rename(Chr = Chromosome)
+
+# Joining Human imprints and seqmonk metadata
+HumanImprints_metadata <- left_join(HumanImprints_metadata, seqmonk_metadata, by = c("Probe", "Chr", "Start", "End"))
+
+# Adding if human imprints overlap with promoters
+HumanImprints_metadata[HumanImprints_metadata %>% makeGRangesFromDataFrame(keep.extra.columns = T) %>% findOverlaps(genome_annotation$`CGI Promoters`) %>% as.data.frame() %>% pull(queryHits) %>% unique, "Promoter_overlap"] <- "CGI Promoters"
+
+HumanImprints_metadata[HumanImprints_metadata %>% makeGRangesFromDataFrame(keep.extra.columns = T) %>% findOverlaps(genome_annotation$`Non-CGI Promoters`) %>% as.data.frame() %>% pull(queryHits) %>% unique, "Promoter_overlap"] <- "Non-CGI Promoters"
+
+```
+
+# Loading seqmonk data
+```{r}
+
+seqmonk_results <- 
+  list.files("analysis/main/03_condition_comparison/human_imprints/seqmonk_results/imprints", full.names = T) %>% 
+  map(read_tsv) %>% 
+  set_names(list.files("analysis/main/03_condition_comparison/human_imprints/seqmonk_results/imprints") %>% str_remove("_EdgeR_p0.05.txt") %>% str_replace("PBAT", "Methylation")) %>% 
+  map(~ mutate(.x, Probe = make.unique(Probe)))
+
+```
+
+# Creating object with ChIP-seq, ATAC-seq, and Methylation counts in human imprints
+```{r}
+
+seqmonk_results <- 
+map2(seqmonk_results, names(seqmonk_results), function(x, y){
+  
+  return_list <- list()
+  
+  if(any(str_detect(names(x), "P-value"))){
+  pvalue_df <- 
+  x %>% 
+  select(c("Probe"), contains("P-value")) %>%
+  gather(condition, pvalue, -setdiff(names(.), names(.)[str_detect(names(.), "P-value")])) %>% 
+  mutate(condition = str_extract(condition, "correction_.*[^\\)]") %>% str_remove("correction_")) %>% 
+  mutate(condition = case_when(condition == "primed" ~ "H9-EOS", TRUE ~ paste("cR-H9-EOS", condition, sep = "_")))
+  
+  return_list <- list.append(return_list, "pvalue" = pvalue_df)
+  }
+  
+  
+  if(any(str_detect(names(x), "FDR"))){
+  FDR_df <-
+  x %>% 
+  select(c("Probe"), contains("FDR")) %>%
+  gather(condition, FDR, -setdiff(names(.), names(.)[str_detect(names(.), "FDR")])) %>% 
+  mutate(condition = str_extract(condition, "_.*[^\\)]") %>% str_remove("_")) %>% 
+  mutate(condition = case_when(condition == "primed" ~ "H9-EOS", TRUE ~ paste("cR-H9-EOS", condition, sep = "_")))
+  
+  return_list <- list.append(return_list, "FDR" = FDR_df)
+  }
+  
+  
+  if(any(str_detect(names(x), "Log2 Fold Change"))){
+  log2FC_df <-
+  x %>% 
+  select(c("Probe"), contains("Log2 Fold Change")) %>%
+  gather(condition, log2FC, -setdiff(names(.), names(.)[str_detect(names(.), "Log2 Fold Change")])) %>% 
+  mutate(condition = str_extract(condition, "_.*[^\\)]") %>% str_remove("_")) %>% 
+  mutate(condition = case_when(condition == "primed" ~ "H9-EOS", TRUE ~ paste("cR-H9-EOS", condition, sep = "_")))
+
+  return_list <- list.append(return_list, "log2FC" = log2FC_df)
+  }
+  
+  
+  if(any(str_detect(names(x), "genome"))){
+  allele_counts_df <-
+  x %>% 
+  select(c("Probe"), contains("genome")) %>%
+  gather(condition, counts, -setdiff(names(.), names(.)[str_detect(names(.), "genome")])) %>% 
+  mutate(condition = str_extract(condition, "[^_]*H9-EOS.*$")) %>%
+  tidyr::separate(col = "condition", into = c("condition", "allele"), sep = "\\.") %>%
+  mutate(allele = str_replace(allele, "genome", "allele_"))
+  
+  return_list <- list.append(return_list, "allele_counts" = allele_counts_df)
+  }
+  
+  return(
+    purrr::reduce(return_list, full_join) %>% 
+      mutate(seqtype = y) %>% 
+      mutate(condition = str_replace(condition, "_", " "), 
+             condition = factor(condition, levels = c("cR-H9-EOS d0", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS"))) %>% 
+      filter(condition != "cR-H9-EOS d3")
+    )
+}) 
+
+# Adding the pvalue and log2FC columns to the Methylation dataset
+seqmonk_results$Methylation$pvalue <- NA
+seqmonk_results$Methylation$log2FC <- NA
+
+```
+
+# Plot significant allele-specific results
+```{r}
+
+# Selecting only DMRs with statistically significant results in any of the epigenetic marks
+probe_FDR <-
+  purrr::reduce(seqmonk_results[1:7], rbind) %>%
+  filter(!is.na(FDR)) %>%
+  pull(Probe) %>%
+  unique %>%
+  sort
+
+probe_FDR <- 
+seqmonk_results$Methylation %>% 
+  spread(allele, counts) %>% 
+  mutate(counts = allele_2 - allele_1) %>% 
+  filter(Probe %in% probe_FDR) %>% 
+  arrange(dplyr::desc(counts), FDR) %>%
+  pull(Probe) %>%
+  unique
+
+
+# Plot histone modifications allele difference 
+histones_allele_plot <- 
+  purrr::reduce(seqmonk_results[1:6], rbind) %>%
+  mutate(condition = condition %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+  mutate(condition = factor(condition, levels = c("cR-H9 d0", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>% 
+  mutate(seqtype = str_replace(seqtype, "ATACseq", "ATAC-seq")) %>% 
+  spread(allele, counts) %>% 
+  mutate(counts = allele_2 - allele_1) %>%
+  filter(Probe %in% probe_FDR) %>% 
+  mutate(Probe = factor(Probe, levels = probe_FDR)) %>% 
+  mutate(counts = as.numeric(counts)) %>%
+  mutate(FDR = as.character(FDR)) %>% 
+  mutate(FDR_star = case_when(FDR != "NaN" ~ "*", TRUE ~ "")) %>% 
+  ggplot(aes(condition, Probe, label = FDR_star, fill = counts)) + 
+  geom_tile(color = "black") + 
+  geom_text(size = 8, nudge_y = -0.10, color = "black") +
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.text.x      = element_text(hjust = 1, vjust = 1, angle = 45), 
+        legend.key.width = unit(1,"cm"),
+        axis.ticks.y     = element_blank(), 
+        axis.text.y      = element_blank()) + 
+  scale_x_discrete(drop = FALSE) + 
+  scale_y_discrete(expand = c(0,0)) + 
+  scale_fill_stepsn(n.breaks = 8, 
+                    colours  = brewer.pal(n = 11, name = "RdBu"), 
+                    na.value = "white") + 
+  facet_grid(~ seqtype) + 
+  labs(x = "", y = "")
+
+
+# Plot methylation allele difference 
+Methylation_allele_plot <- 
+seqmonk_results$Methylation %>%
+  mutate(condition = condition %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>% 
+  mutate(condition = factor(condition, levels = c("cR-H9 d0", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>% 
+  spread(allele, counts) %>% 
+  mutate(counts = allele_2 - allele_1) %>% 
+  filter(Probe %in% probe_FDR) %>%
+  mutate(Probe = factor(Probe, levels = probe_FDR)) %>%
+  mutate(counts = as.numeric(counts)) %>%
+  mutate(FDR = as.character(FDR)) %>% 
+  mutate(FDR_star = case_when(FDR != "NaN" ~ "*", TRUE ~ "")) %>%
+  ggplot(aes(condition, Probe, label = FDR_star, fill = counts)) + 
+  geom_tile(color = "black") +
+  geom_text(size = 8, nudge_y = -0.10, color = "black") +
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.text.x      = element_text(hjust = 1, vjust = 1, angle = 45), 
+        legend.key.width = unit(1,"cm")
+        ) + 
+  scale_x_discrete(drop = FALSE) + 
+  scale_y_discrete(expand = c(0,0)) + 
+  scale_fill_stepsn(n.breaks = 8, 
+                    colours  = brewer.pal(n = 11, name = "RdBu"), 
+                    na.value = "white") +
+  facet_grid(~ seqtype) +
+  labs(x = "", y = "", fill = "Percentage methylation difference between alleles (%)")
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/human_imprints_1.svg", width = 10, height = 5)
+#pdf(file = "output/figures/03_condition_comparison/human_imprints_1.pdf", width = 10, height = 5)
+Methylation_allele_plot + histones_allele_plot + plot_layout(widths = c(.16, 1, 0.01))
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

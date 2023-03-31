@@ -1,0 +1,97 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Finding methylation DMRs"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 27, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading cov files
+```{r}
+
+plan("multisession", workers = 10)
+
+dmrseq_blocks <- 
+list(
+"HNES1_d0.vs.HNES1_d10"            = c("HNES1 d0", "HNES1 d10"),
+"HNES1_d10.vs.H9_EOS"              = c("HNES1 d10", "H9-EOS"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d10"    = c("cR-H9-EOS d0", "cR-H9-EOS d10"),
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20X"  = c("cR-H9-EOS d10", "cR-H9-EOS d20X"),
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20E"  = c("cR-H9-EOS d10", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d10.vs.H9_EOS"          = c("cR-H9-EOS d10", "H9-EOS"),
+"cR_H9_EOS_d20X.vs.cR_H9_EOS_d20E" = c("cR-H9-EOS d20X", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d20X.vs.H9_EOS"         = c("cR-H9-EOS d20X", "H9-EOS"),
+"cR_H9_EOS_d20E.vs.H9_EOS"         = c("cR-H9-EOS d20E", "H9-EOS")
+) %>% map2(names(.), function(x, y) {
+
+  bismarkBSseq <- 
+    bsseq::read.bismark(files          = PBAT_metadata %>% filter(group %in% x) %>% arrange(cell, day, replicate) %>% pull(file) %>% unlist,
+                        rmZeroCov      = TRUE,
+                        strandCollapse = TRUE,
+                        verbose        = TRUE, 
+                        BACKEND        = "HDF5Array",
+                        dir            = paste0("tmp/dmrseq_tmp/", y),
+                        replace        = TRUE,
+                        BPPARAM        = MulticoreParam(workers = 10))
+  
+  bismarkBSseq <- bismarkBSseq[seqnames(bismarkBSseq) %in% c(1:22, "X", "Y")]
+  bismarkBSseq <- GenomeInfoDb::keepSeqlevels(bismarkBSseq, c(1:22, "X", "Y"), pruning.mode = c("coarse")) 
+
+  pData(bismarkBSseq)$CellType  <- PBAT_metadata %>% filter(group %in% x) %>% arrange(cell, day, replicate) %>% pull(cell) %>% as.character() %>% unique %>% .[[1]]
+  
+  pData(bismarkBSseq)$Replicate <- PBAT_metadata %>% filter(group %in% x) %>% arrange(cell, day, replicate) %>% pull(replicate) %>% as.numeric()
+  
+  pData(bismarkBSseq)$Condition <- PBAT_metadata %>% filter(group %in% x) %>% arrange(cell, day, replicate) %>% pull(day) %>% as.character
+  
+  loci.idx <- which(DelayedMatrixStats::rowSums2(getCoverage(bismarkBSseq, type = "Cov") == 0) == 0)
+
+  bismarkBSseq.filtered <- bismarkBSseq[loci.idx, ]
+  
+  testCovariate <- "Condition"
+  
+  regions <- dmrseq(bs            = bismarkBSseq.filtered,
+                    cutoff        = 0.05,
+                    testCovariate = testCovariate,
+                    BPPARAM       = MulticoreParam(workers = 10)
+                    )
+
+  blocks  <- dmrseq(bs            = bismarkBSseq.filtered,
+                   cutoff        = 0.05,
+                   minNumRegion  = 5,
+                   testCovariate = testCovariate,
+                   BPPARAM       = MulticoreParam(workers = 10),
+                   block         = TRUE,
+                   minInSpan     = 500,
+                   bpSpan        = 5e4,
+                   maxGapSmooth  = 1e6,
+                   maxGap        = 5e3)
+  
+  save(bismarkBSseq, regions, blocks, file = paste0("output/database/", y, "_DMRs.RData"))
+})
+
+plan("sequential")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

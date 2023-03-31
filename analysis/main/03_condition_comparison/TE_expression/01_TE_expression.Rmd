@@ -1,0 +1,246 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "TE expression"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 25, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading TE expression data
+```{r}
+
+# Zijlmans_2022
+Zijlmans_2022_EXPR <- 
+  list.files(path = "data/results/SalmonTE/Zijlmans_2022", pattern = "EXPR.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  purrr::reduce(merge) %>% 
+  mutate_at(.vars = vars(-c("TE")), .funs = ~ log2(.x + 1))
+  
+names(Zijlmans_2022_EXPR) <- 
+  names(Zijlmans_2022_EXPR) %>% 
+  str_remove("SRR\\d+_GSM\\d+_\\d+_") %>% 
+  str_remove("_[A,T,C,G]{6}_Homo_sapiens_RNA-Seq_1") %>% 
+  ave(., ., FUN = function(i) paste0(i, '_rep', seq_along(i))) %>% 
+  str_replace("TE_rep1", "TE")
+
+
+# Kumar_2022
+Kumar_2022_EXPR <- 
+  list.files(path = "data/results/SalmonTE/Kumar_2022", pattern = "EXPR.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  purrr::reduce(merge) %>% 
+  mutate_at(.vars = vars(-c("TE")), .funs = ~ log2(.x + 1))
+  
+names(Kumar_2022_EXPR) <- 
+  names(Kumar_2022_EXPR) %>% 
+  str_remove("SRR\\d+_GSM\\d+_RNA-Seq_H9_") %>% 
+  str_remove("_Homo_sapiens_RNA-Seq_1")
+
+
+# Collinson_2016
+Collinson_2016_EXPR <- 
+  list.files(path = "data/results/SalmonTE/Collinson_2016", pattern = "EXPR.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  purrr::reduce(merge) %>% 
+  mutate_at(.vars = vars(-c("TE")), .funs = ~ log2(.x + 1))
+  
+names(Collinson_2016_EXPR) <- 
+  names(Collinson_2016_EXPR) %>% 
+  str_remove("SRR\\d+_GSM\\d+_") %>% 
+  str_remove("_Homo_sapiens_RNA-Seq_1") %>% 
+  str_replace("Rep", "rep")
+
+# Rostovskaya_2019
+Rostovskaya_2019_EXPR <- 
+  list.files(path = "data/results/SalmonTE/Rostovskaya_2019", pattern = "EXPR.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  purrr::reduce(merge) %>% 
+  mutate_at(.vars = vars(-c("TE")), .funs = ~ log2(.x + 1))
+
+file_names <- 
+  RNAseq_metadata %>% 
+  mutate(file = str_remove(file, "data/results/nf-core_results/rnaseq_single_end/salmon/") %>% str_remove("/quant.sf")) %>% 
+  select(file, sample_id) %>% 
+  filter(file %in% names(Rostovskaya_2019_EXPR)) %>% 
+  pull(file)
+
+sample_id <- 
+  RNAseq_metadata %>% 
+  mutate(file = str_remove(file, "data/results/nf-core_results/rnaseq_single_end/salmon/") %>% str_remove("/quant.sf")) %>% 
+  select(file, sample_id) %>% 
+  filter(file %in% names(Rostovskaya_2019_EXPR)) %>% 
+  pull(sample_id)
+
+Rostovskaya_2019_EXPR <- Rostovskaya_2019_EXPR[, c("TE", file_names)]
+
+names(Rostovskaya_2019_EXPR) <- c("TE", sample_id)
+
+```
+
+# Transposable elements expression plots
+```{r}
+
+# Transportable element annotation
+TE_annotation <- 
+  list.files(path = "data/results/SalmonTE/Rostovskaya_2019", pattern = "clades.csv", recursive = T, full.names = T) %>% 
+  read_csv %>% 
+  dplyr::rename(TE = name)
+
+TE_expression_plots <- 
+map2(list(Rostovskaya_2019_EXPR, Zijlmans_2022_EXPR, Collinson_2016_EXPR, Kumar_2022_EXPR), c("Rostovskaya_2019", "Zijlmans_2022", "Collinson_2016", "Kumar_2022"), function(x, y){
+
+  boxplot_1 <- 
+    x %>%
+    gather(sample_id, log2TPM, -TE) %>%
+    mutate(group = str_remove(sample_id, "_rep\\d$")) %>% 
+    filter(log2TPM > 0) %>%
+    ggplot(aes(sample_id, log2TPM, fill = group)) +
+    geom_jitter(width = 0.4, alpha = 0.25) +
+    geom_boxplot() +
+    scale_fill_brewer(palette = "Dark2") +
+    theme_publication() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) + 
+    labs(x = "Sample", y = "Log2(TPM + 1)", title = paste0(y, " | log2(TPM + 1) > 0"))
+
+  boxplot_2 <- 
+    x %>%
+    left_join(TE_annotation %>% .[.$TE %in% x$TE,]) %>% 
+    gather(sample_id, log2TPM, -TE, -class, -clade) %>%
+    mutate(group = str_remove(sample_id, "_rep\\d$")) %>% 
+    filter(log2TPM > 0) %>%
+    mutate(clade = factor(clade, levels = unique(clade))) %>% 
+    arrange(dplyr::desc(clade)) %>% 
+    ggplot(aes(log2TPM, clade, fill = group)) +
+    geom_jitter(width = 0.4, alpha = 0.1) +
+    geom_boxplot(alpha = 1) +
+    theme_publication() +
+    scale_fill_brewer(palette = "Dark2") +
+    facet_grid(~ group) +
+    labs(x = "Log2(TPM + 1)", y = "TE Clade", title = paste0(y, " | log2(TPM + 1) > 0"))
+  
+  return(list("boxplot_1" = boxplot_1, "boxplot_2" = boxplot_2))
+}) %>% set_names(c("Rostovskaya_2019", "Zijlmans_2022", "Collinson_2016", "Kumar_2022"))
+
+```
+
+```{r}
+
+# Zijlmans_2022
+Zijlmans_2022_diffTE <- 
+  list.files(path = "data/results/SalmonTE/Zijlmans_2022", pattern = "results.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  set_names(
+    list.files(path = "data/results/SalmonTE/Zijlmans_2022/") %>%
+      str_replace_all("naive", "Naïve") %>%
+      str_replace_all("primed", "Primed") %>%
+      str_replace_all("_", " ") %>% 
+      str_replace_all("H9", "H9 Primed") %>% 
+      str_replace_all("vs", "vs.")
+    ) %>%
+  map2_df(names(.), ~ mutate(.x, comparison = .y)) %>% 
+  mutate(comparison = factor(comparison, levels = c("Naïve vs. Primed", "Naïve vs. Naïve PRC2i", "Primed vs. Primed PRC2i")))
+  
+
+# Kumar_2022
+Kumar_2022_diffTE <- 
+  list.files(path = "data/results/SalmonTE/Kumar_2022", pattern = "results.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  set_names(
+    list.files(path = "data/results/SalmonTE/Kumar_2022/") %>%
+      str_replace_all("naive", "Naïve") %>%
+      str_replace_all("primed", "Primed") %>%
+      str_replace_all("_", " ") %>% 
+      str_replace_all("H9", "H9 Primed") %>% 
+      str_replace_all("vs", "vs.")
+    ) %>%
+  map2_df(names(.), ~ mutate(.x, comparison = .y)) %>% 
+  mutate(comparison = factor(comparison, levels = c("Naïve vs. Primed", "Naïve vs. Naïve EZH2i", "Primed vs. Primed EZH2i")))
+
+# Collinson_2016
+Collinson_2016_diffTE <- 
+  list.files(path = "data/results/SalmonTE/Collinson_2016", pattern = "results.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  set_names(
+    list.files(path = "data/results/SalmonTE/Collinson_2016/") %>%
+      str_replace_all("naive", "Naïve") %>%
+      str_replace_all("primed", "Primed") %>%
+      str_replace_all("_", " ") %>% 
+      str_replace_all("H9", "H9 Primed") %>% 
+      str_replace_all("vs", "vs.")
+    ) %>%
+  map2_df(names(.), ~ mutate(.x, comparison = .y)) %>% 
+  mutate(comparison = factor(comparison, levels = c("WT vs. Het", "WT vs. Null", "WT vs. Null EZH2", "Null vs. Null EZH2")))
+
+# Rostovskaya_2019
+Rostovskaya_2019_diffTE <- 
+  list.files(path = "data/results/SalmonTE/Rostovskaya_2019", pattern = "results.csv", recursive = T, full.names = T) %>%
+  map(read_csv) %>% 
+  set_names(
+    list.files(path = "data/results/SalmonTE/Rostovskaya_2019/") %>%
+      str_replace_all("naive", "Naïve") %>%
+      str_replace_all("primed", "Primed") %>%
+      str_replace_all("_", " ") %>% 
+      str_replace_all("H9", "H9 Primed") %>% 
+      str_replace_all("vs", "vs.")
+    ) %>%
+  map2_df(names(.), ~ mutate(.x, comparison = .y)) %>% 
+  mutate(comparison = factor(comparison, levels = c("Naïve vs. d10", "Naïve vs. H9 Primed", "d10 vs. H9 Primed")))
+
+TE_Diff_plots <- 
+map2(list(Rostovskaya_2019_diffTE, Zijlmans_2022_diffTE, Kumar_2022_diffTE, Collinson_2016_diffTE), c("Rostovskaya_2019", "Zijlmans_2022", "Kumar_2022", "Collinson_2016"), function(x, y) {
+  
+  x %>%
+  ggplot(aes(log2FoldChange, -log10(padj), label = name)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = -2, linetype = "dashed") +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  geom_point(color = ifelse(x$padj < 0.05 & abs(x$log2FoldChange) > 2, 'red', 'gray'), size = 3) +
+  ggrepel::geom_label_repel(data = x %>% filter(padj < 0.05) %>% filter(abs(log2FoldChange) > 2), box.padding = 0.5) +
+  theme_publication() +
+  labs(x = "Log2 Fold Change", y = "-Log10 Adjusted p-value", title = y) +
+  scale_x_continuous(limits = c(-15, 15)) +
+  facet_grid(~ comparison)
+  
+})
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/revision/TE_expression_plots.svg", width = 13, height = 20)
+(TE_expression_plots$Rostovskaya_2019$boxplot_1 + TE_expression_plots$Rostovskaya_2019$boxplot_2) /
+(TE_expression_plots$Zijlmans_2022$boxplot_1    + TE_expression_plots$Zijlmans_2022$boxplot_2) /
+(TE_expression_plots$Kumar_2022$boxplot_1       + TE_expression_plots$Kumar_2022$boxplot_2) /
+(TE_expression_plots$Collinson_2016$boxplot_1   + TE_expression_plots$Collinson_2016$boxplot_2)
+dev.off()
+
+svg(filename = "output/figures/revision/TE_Diff_plots.svg", width = 13, height = 20)
+TE_Diff_plots[[1]] / TE_Diff_plots[[2]] / TE_Diff_plots[[3]] / TE_Diff_plots[[4]]
+dev.off()
+
+```
+
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

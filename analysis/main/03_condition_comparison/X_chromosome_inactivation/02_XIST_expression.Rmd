@@ -1,0 +1,90 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "X chromosome analysis - XIST, XACT, and TSIX expression"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 21, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# RNA-Seq counts
+```{r}
+
+load(file = "output/database/rnaseq_counts.RData")
+
+```
+
+# XIST and XACT expression
+```{r}
+
+XIST_XACT_RNAseq_normalized_counts <- 
+  RNAseq_normalized_counts %>%
+  as.data.frame() %>%
+  rownames_to_column("gene_id") %>%
+  left_join(unique(edb_gene_attributes[, c("gene_id", "gene_name")])) %>%
+  filter(gene_name %in% c("XIST", "XACT")) %>%
+  gather(sample_id, value, -gene_id, -gene_name) %>%
+  left_join(unique(RNAseq_metadata[, c("group", "sample_id", "cell", "day")])) %>%
+  filter(group %in% c("HNES1 d0","cR-H9-EOS d0", "HNES1 d10","cR-H9-EOS d10", "HNES1 d20X", "cR-H9-EOS d20X", "HNES1 d20E","cR-H9-EOS d20E","H9-EOS")) %>% 
+  mutate(value = log2(value + 1))
+
+XIST_XACT_plot_data <- 
+  XIST_XACT_RNAseq_normalized_counts %>% 
+  filter(!group == "H9-EOS") %>% 
+  rbind(XIST_XACT_RNAseq_normalized_counts %>% filter(group == "H9-EOS") %>% mutate(cell = "HNES1")) %>% 
+  rbind(XIST_XACT_RNAseq_normalized_counts %>% filter(group == "H9-EOS") %>% mutate(cell = "cR-H9")) %>% 
+  mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+  mutate(cell = str_remove(cell, "-EOS")) %>% 
+  mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+  mutate(cell = factor(cell, levels = c("HNES1", "cR-H9"))) %>% 
+  mutate(day = factor(day, levels = c("0", "10", "20X", "20E", "H9 Primed")))
+
+XIST_XACT_plot <- 
+  ggplot(XIST_XACT_plot_data, aes(day, value, color = gene_name, group = gene_name)) +
+    stat_summary(fun = mean, geom = "line", size = 1.5, color = "black", show.legend = F) +
+    stat_summary(fun = mean, geom = "line", size = 1, show.legend = F) +
+    stat_summary(aes(width = 0.5), fun.data = mean_se, geom = "errorbar", size = 0.5, color = "black", show.legend = F) +
+    stat_summary(fun = mean, geom = "point", color = "black", size = 3, show.legend = F) +
+    stat_summary(fun = mean, geom = "point", size = 2.5, show.legend = T) +
+    theme_publication() +
+    theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1),
+          legend.direction = "vertical",
+          legend.position  = "right", 
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank()) +
+    scale_color_brewer(palette = "Set1") +
+    labs(x = "", y = "Log2(normalized counts + 1)", color = "Gene") +
+    facet_grid(cell ~ .)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/X_chromosome_1.svg", width = 3.5, height = 3.5)
+XIST_XACT_plot
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

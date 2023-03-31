@@ -1,0 +1,124 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "ChromHMM concatenated"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Emission states
+```{r}
+
+# loading the emission data and converting into a matrix
+emissions_data <- read_tsv("data/results/ChromHMM/concatenated_all_samples/model/emissions_12.txt") %>%
+                  column_to_rownames("State (Emission order)") %>%
+                  `*`(100) %>% 
+                  as.matrix()
+
+# colors for the emission heatmap
+emissions_heatmap_colors <- circlize::colorRamp2(c(0, 10, 20, 40, 60, 80, 100), c(rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,4,5,6,9,11)])))
+
+# Heatmap of the emission states
+set.seed(123)
+ht_emissions <- 
+ComplexHeatmap::Heatmap(matrix                 = emissions_data,
+                        name                   = "Observation frequency (%)",
+                        col                    = emissions_heatmap_colors,
+                        cluster_rows           = T,
+                        cluster_columns        = T,
+                        column_names_rot       = 45,
+                        row_names_side         = "left",
+                        row_title              = "States",
+                        column_names_gp        = grid::gpar(fontsize = 10),
+                        column_names_centered  = F,
+                        #column_names_side      = "top",
+                        show_heatmap_legend    = T,
+                        heatmap_legend_param   = list(direction = "horizontal"),
+                        rect_gp                = grid::gpar(col = "black"),
+                        cell_fun               = function(j, i, x, y, width, height, fill) {
+                          grid::grid.text(sprintf("%.0f", emissions_data[i, j]), x, y, gp = grid::gpar(fontsize = 8, col = "black"))
+}
+)
+
+```
+
+# State genome occupancy for each sample
+```{r}
+
+# Splitting ChromHMM states into conditions
+segments_df <-
+  map_df(list.files("data/results/ChromHMM/concatenated_all_samples/segmentation/") %>% .[str_detect(., "12_segments.bed")] %>% set_names(
+       (list.files("data/results/ChromHMM/concatenated_all_samples/segmentation/") %>% .[str_detect(., "12_segments.bed")] %>%
+        str_remove("_12_segments.bed") %>% 
+        str_replace("_(\\d)", " d\\1") %>% 
+        str_replace_all("_", "-"))), 
+  ~ read_tsv(paste0("data/results/ChromHMM/concatenated_all_samples/segmentation/", .x), col_names = F) %>%
+  filter(X1 %in% c(1:22, "X", "Y")) %>% 
+  dplyr::rename(chr = X1, start = X2, end = X3, state = X4) %>%
+  mutate(start = start + 1) %>%
+  mutate(state = str_remove(state, "E")) %>%
+  mutate(group = str_remove(.x, "_12_segments.bed") %>% str_replace("_(\\d)", " \\1") %>% str_replace_all("_", "-"))
+  ) %>% 
+  unique
+
+# Heatmap colors
+percentage_heatmap_colors <- circlize::colorRamp2(seq(0,0.3,0.05), c(rev(brewer.pal(n = 11, name = "RdBu")[c(1,2,5,10,11,11,11)])))
+
+percentage_heatmap <- 
+  segments_df %>% 
+  group_by(state, group) %>%
+  summarise(count = n()) %>% 
+  mutate(pct = count/sum(count)) %>%
+  ungroup %>% 
+  mutate(group = str_remove(group, "-EOS") %>% str_replace(" ", " d") %>% str_replace("H9$", "H9 Primed")) %>% 
+  select(-count) %>% 
+  spread(group, pct) %>% 
+  mutate(state = factor(state, levels = 1:12)) %>% 
+  arrange(state) %>% 
+  column_to_rownames("state") %>% 
+  .[, c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")] %>% 
+  as.matrix() %>% 
+  ComplexHeatmap::Heatmap(
+                        name                   = "Genome occupancy (%)",
+                        col                    = percentage_heatmap_colors,
+                        cluster_rows           = T,
+                        cluster_columns        = F,
+                        column_names_rot       = 45,
+                        column_names_gp        = grid::gpar(fontsize = 10),
+                        show_heatmap_legend    = T,
+                        heatmap_legend_param   = list(direction = "horizontal"),
+                        rect_gp                = grid::gpar(col = "black")
+)
+
+```
+
+# Saving Plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/ChromHMM_concatenated_1.svg", width = 7, height = 4.5)
+draw(ht_emissions + percentage_heatmap, ht_gap = unit(1, "cm"))
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+This document was processed on: `r Sys.Date()`.

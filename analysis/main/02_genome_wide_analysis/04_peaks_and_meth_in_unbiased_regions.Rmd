@@ -1,0 +1,243 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Genome-wide analysis - Percentage of peaks and methylation ratio in unbiased regions classified by annotation overlap (Autosomes)"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading data
+```{r}
+
+# Loading ChIP-seq, ATAC-seq, and PBAT read enrichment counts
+load(file = "output/database/counts_in_windows_2kb.RData")
+
+```
+
+# Loading peak data
+```{r}
+
+load(file = "output/database/chipseq_atacseq_peaks.RData")
+
+```
+
+# Tilling the genome
+```{r}
+
+# Getting the chromosome length
+chromosome_lenght <-
+  read_tsv("genomes/Homo_sapiens/GRCh38/Ensembl/release-98/Homo_sapiens.GRCh38.dna_sm.primary_assembly.chrSize.txt", col_names = F) %>%
+  dplyr::rename(Chromosome = X1, Length = X2)
+
+# Creating a vector of the chromosomes lengths
+chromosome_lenght_vector <-
+  chromosome_lenght$Length %>% setNames(chromosome_lenght$Chromosome)
+
+# Tilling the genome into 2kb windows
+tilling_genome_windows_2Kb <- tileGenome(chromosome_lenght_vector, tilewidth = 2000) %>% unlist
+
+# Removing windows that overlap centromeres
+tilling_genome_windows_2Kb <- subsetByOverlaps(tilling_genome_windows_2Kb, genome_annotation$Centromeres, invert = T)
+
+```
+
+# Annotating probes
+```{r}
+
+# Chosing the annotations
+genome_annotation_subset <- 
+  genome_annotation %>% .[c(
+    "CGI Promoters",
+    "Non-CGI Promoters",
+    "CpG islands",
+    "Distal Naïve enhancers",
+    "Distal Primed enhancers",
+    "Distal Naïve super-enhancers",
+    "Distal Primed super-enhancers",
+    "Exons",
+    "Introns",
+    "Repeats",
+    "Intergenic regions",
+    "CGI shores",
+    "CGI shelves",
+    "CGI Promoters (high expression)",
+    "CGI Promoters (median expression)",
+    "CGI Promoters (low expression)",
+    "Non-CGI Promoters (high expression)",
+    "Non-CGI Promoters (median expression)",
+    "Non-CGI Promoters (low expression)"
+    )] %>% GRangesList()
+
+# Annotated seqmonk probes as a GRanges objects
+windows_2Kb_autosomes_annotated_gr <- 
+ tilling_genome_windows_2Kb %>% .[seqnames(.) %in% c(1:22)] %>%  
+ annotate_regions(genomic_regions             = ., 
+                  annotation_list             = genome_annotation_subset,
+                  with_duplicated_annotations = TRUE,
+                  apply_GRanges_reduce        = FALSE) %>% 
+  named_group_split(annotation) %>% 
+  map(~ makeGRangesFromDataFrame(.x, keep.extra.columns = T))
+
+# Annotated seqmonk probes as a dataframe
+windows_2Kb_autosomes_annotated_df <- 
+ tilling_genome_windows_2Kb %>% .[seqnames(.) %in% c(1:22)] %>%
+ annotate_regions(genomic_regions             = ., 
+                  annotation_list             = genome_annotation_subset,
+                  with_duplicated_annotations = TRUE,
+                  apply_GRanges_reduce        = FALSE) %>% 
+  mutate(position = paste(seqnames, start, end, sep = ":")) %>%
+  select(position, annotation) %>%
+  unique
+
+```
+
+# Calculating the ratio of annotated region probes with peaks
+```{r}
+
+windows_2Kb_autosomes_annotated_peak_ratio <- 
+map_dfr(windows_2Kb_autosomes_annotated_gr, function(probes){
+
+macs_peaks_gr %>%
+  .[seqnames(.) %in% 1:22] %>%
+  .[!.$day == 3] %>%
+  as.data.frame() %>%
+  named_group_split(seqtype) %>%
+  map2_dfr(names(.), 
+           function(x, y){
+             named_group_split(x, group) %>%
+               map2_dfr(names(.), 
+                        ~ makeGRangesFromDataFrame(.x, keep.extra.columns = T) %>%
+                          findOverlaps(probes,.) %>%
+                          as.data.frame %>%
+                          pull(queryHits) %>%
+                          unique %>%
+                          tibble(index = ., group = .y, overlap = 1)) %>% 
+               spread(group, overlap) %>% 
+               right_join(as.data.frame(probes) %>% mutate(index = as.integer(rownames(.))), by = "index") %>% 
+               arrange(index) %>% 
+               select(-index) %>% 
+               mutate_at(.vars = vars(-c("seqnames", "start", "end", "width", "strand", "annotation")), .funs = ~ replace(.x, is.na(.x), 0)) %>% 
+               mutate(seqtype = y) %>% 
+               select(-c("seqnames", "start", "end", "width", "strand")) %>% 
+               group_by(annotation, seqtype) %>% 
+               summarize_all(.funs = ~ mean(.x)) %>% 
+               ungroup
+             })
+})
+
+```
+
+# Methylation ratio in annotated probe regions
+```{r}
+
+# Methylation ratio
+PBAT_meth_ratio <- 
+  PBAT_meth_ratio %>%
+  .[, !str_detect(colnames(.), "d3")] %>% 
+  .[!str_detect(rownames(.), "X:|Y:"), ] %>%
+  as.data.frame() %>% 
+  rownames_to_column("position") %>%
+  gather(sample_id, meth_perc, -position) %>%
+  left_join(unique(PBAT_metadata[, c("sample_id", "group")]), by = "sample_id") %>%
+  group_by(group, position) %>%
+  summarise(Methylation = mean(meth_perc, na.rm = TRUE)) %>%
+  ungroup
+
+# Methylation ratio by annotation
+PBAT_meth_ratio_by_annotation <- 
+  map_dfr(unique(windows_2Kb_autosomes_annotated_df$annotation) %>% set_names(.,.),
+          ~ PBAT_meth_ratio %>% .[.$position %in% windows_2Kb_autosomes_annotated_df[windows_2Kb_autosomes_annotated_df$annotation == .x, "position"],] %>% mutate(annotation = .x) %>% mutate(seqtype = "Methylation"))
+
+```
+
+# Methylation ratio in annotated probe regions
+```{r}
+
+windows_2Kb_autosomes_annotated_peak_ratio_data <- 
+  windows_2Kb_autosomes_annotated_peak_ratio %>% 
+  gather(group, ratio, -annotation, -seqtype) %>%
+  rbind(PBAT_meth_ratio_by_annotation %>% group_by(seqtype, group, annotation) %>% summarize(Methylation = mean(Methylation, na.rm = T)) %>% ungroup %>% dplyr::rename(ratio = Methylation)) %>% 
+  mutate(seqtype = factor(seqtype, levels = c("ATAC-Seq", "H3K4me3", "H3K27ac", "H3K4me1", "H3K27me3", "H3K9me3", "Methylation"))) %>% 
+  mutate(annotation = factor(annotation, levels = 
+  c(
+    "CpG islands",
+    "CGI shores",
+    "CGI shelves",
+    "CGI Promoters",
+    "CGI Promoters (high expression)",
+    "CGI Promoters (median expression)",
+    "CGI Promoters (low expression)",
+    "Distal Naïve enhancers",
+    "Distal Naïve super-enhancers",
+    "Distal Primed enhancers",
+    "Distal Primed super-enhancers",
+    "Non-CGI Promoters",
+    "Non-CGI Promoters (high expression)",
+    "Non-CGI Promoters (median expression)",
+    "Non-CGI Promoters (low expression)",
+    "Exons",
+    "Introns",
+    "Repeats",
+    "Intergenic regions"
+    )))
+
+# Changing group names
+windows_2Kb_autosomes_annotated_peak_ratio_data$group <- windows_2Kb_autosomes_annotated_peak_ratio_data$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+windows_2Kb_autosomes_annotated_peak_ratio_data <- windows_2Kb_autosomes_annotated_peak_ratio_data %>% mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+
+# annotated regions plot
+windows_2Kb_autosomes_annotated_peak_ratio_plot <-
+ggplot(windows_2Kb_autosomes_annotated_peak_ratio_data %>% na.omit, aes(group, fct_rev(annotation), label = round(ratio, 2), fill = ratio)) +
+  geom_tile(color = "black") +
+  scale_fill_stepsn(breaks = seq(0,1,0.1), colours = rev(brewer.pal(n = 11, name = "RdBu")[c(1,2,3,4,5,7,9,11)]), limits = c(0, 1)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_x_discrete(expand = c(0,0)) +
+  labs(fill = "Ratio of annotated 2kb bins overlapping peaks", y = "", x = "") +
+  theme(axis.ticks       = element_blank(),
+        axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, size = 10, color = "black"),
+        axis.text.y      = element_text(size = 10, color = "black"),
+        strip.text       = element_text(face = "bold", size = 15),
+        strip.background = element_blank(),
+        legend.position  = "bottom") +
+  guides(fill = guide_colourbar(frame.colour   = "Black", 
+                                ticks.colour   = "black", 
+                                direction      = "horizontal", 
+                                title.position = "left", 
+                                barwidth       = 10, 
+                                barheight      = 1)) +
+  facet_grid(. ~ seqtype)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/02_genome_wide_analysis/seqmonk_probes_annotated_ratio.svg", width = 13, height = 5)
+#pdf(file = "output/figures/02_genome_wide_analysis/seqmonk_probes_annotated_ratio.pdf", width = 13, height = 5)
+windows_2Kb_autosomes_annotated_peak_ratio_plot
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

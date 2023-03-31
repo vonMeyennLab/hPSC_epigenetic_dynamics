@@ -1,0 +1,251 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Counts in unbiased genomic windows"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Tilling the genome
+```{r}
+
+# Getting the chromosome length
+chromosome_lenght <-
+  read_tsv("genomes/Homo_sapiens/GRCh38/Ensembl/release-98/Homo_sapiens.GRCh38.dna_sm.primary_assembly.chrSize.txt", col_names = F) %>%
+  dplyr::rename(Chromosome = X1, Length = X2)
+
+# Creating a vector of the chromosomes lengths
+chromosome_lenght_vector <-
+  chromosome_lenght$Length %>% setNames(chromosome_lenght$Chromosome)
+
+# Tilling the genome into 2kb windows
+tilling_genome_windows_2Kb <-
+  tileGenome(chromosome_lenght_vector, tilewidth = 2000) %>% unlist
+
+```
+
+# Loading the Seqmonk probes
+```{r}
+
+# Loading the probes generated in SeqMonk
+seqmonk_probes <-
+  map(c("1000CpGs" = "analysis/objects/7_counts_inside_regions/probes_txt/probes_1000CpGs.txt", 
+        "200CpGs"  = "analysis/objects/7_counts_inside_regions/probes_txt/probes_200CpGs.txt",
+        "100CpGs"  = "analysis/objects/7_counts_inside_regions/probes_txt/probes_100CpGs.txt"),
+  ~ 
+  read_tsv(.x, col_types = list(Chromosome = col_character())) %>%
+  select(Chromosome, Start, End) %>%
+  filter(Chromosome %in% c(1:22, "X", "Y")) %>%
+  janitor::clean_names() %>%
+  GenomicRanges::makeGRangesFromDataFrame()
+  )
+
+# Probe width distribution in each chromosome
+map2_dfr(seqmonk_probes, names(seqmonk_probes),
+  ~ tibble(seqnames    = as.character(seqnames(.x)), 
+           width       = GenomicRanges::width(.x),
+           probe_group = paste(.y, "Probes"))) %>%
+    mutate(seqnames = factor(seqnames, levels = c(1:22, "X", "Y"))) %>% 
+    ggplot(aes(seqnames, width/1000)) + 
+    geom_boxplot(coef = 4, fill = brewer.pal(8, "Dark2")[1]) + 
+    scale_y_log10(breaks = c(1, 5, 10, 30, 100, 1000, 10000)) +
+    theme_publication() +
+    theme(legend.position = "none") +
+    labs(x = "Chromosome", y = "Probe width (in thousands)") +
+    facet_grid(~ probe_group, scales = "free_x")
+
+```
+
+# Choosing the genomic windows to count reads
+```{r}
+
+genome_windows <- seqmonk_probes$`100CpGs`
+
+# Removing windows that overlap centromeres
+genome_windows <- subsetByOverlaps(genome_windows, genome_annotation$Centromeres, invert = T)
+
+```
+
+# Loading and processing ChIP-Seq, ATAC-Seq, and PBAT data
+## ChIP-Seq and ATAC-Seq counts inside genomic regions
+```{r}
+
+# Dataset names
+chipseq_atacseq_dataset_names <- 
+list.files("data/results/nf-core_results/") %>% .[str_detect(., "chipseq|atacseq")]
+
+# read counts over genome tilling windows
+chipseq_atacseq_reads <-
+map(chipseq_atacseq_dataset_names,
+~ chipseq_region_counts(bamFiles = list.files(paste0("data/results/nf-core_results/", .x, "/bwa/mergedLibrary"), full.names = TRUE, pattern = 'bam$'), 
+                        gr_object = genome_windows)) %>%
+  set_names(chipseq_atacseq_dataset_names %>% str_replace("chipseq_", "") %>% str_replace("atacseq", "ATAC-Seq"))
+
+# Adding rownames
+chipseq_atacseq_reads <- 
+map(chipseq_atacseq_reads, function(x){
+  
+  rownames(x) <- as.data.frame(genome_windows) %>% mutate(row_names = paste(seqnames, start, end, sep = ":")) %>% pull(row_names)
+  return(x)
+  
+})
+
+# Removing input samples
+chipseq_atacseq_reads <- map(chipseq_atacseq_reads, ~ .x %>% .[, !colnames(.) %in% "INPUT_rep1"])
+
+# convert counts into normalized
+chipseq_atacseq_normalized_counts <-
+                                  map(chipseq_atacseq_reads,
+                                  ~ chipseq_normalized_counts(ReadCounts = .x,
+                                                              Metadata   = RNAseq_metadata)
+                                  )
+
+# convert counts into transformed counts
+chipseq_atacseq_transformed_counts <-
+                                  map(chipseq_atacseq_reads,
+                                  ~ chipseq_transformed_counts(ReadCounts = .x,
+                                                               Metadata   = RNAseq_metadata)
+                                  )
+
+```
+
+# Methylation counts inside regions
+```{r}
+
+#######################################################
+# Loading the filtered normalized methylation data
+
+plan("multisession", workers = 10)
+
+## loading the filtered methylation results
+PBATdb_filtered_normed <-
+future_map(list.files(path       = "output/database/PBATdb_filtered_normed",
+                      pattern    = "_filtered_normed.txt.bgz$",
+                      full.names = T),
+    function(x){
+      
+      sample_ids <- x %>%
+                    str_remove("output/database/PBATdb_filtered_normed") %>%
+                    str_remove("_filtered_normed.txt.bgz")
+      
+      treatment_ids <- PBAT_metadata$group %>% 
+                       as.factor() %>% 
+                       as.numeric() %>% 
+                       .[match(sample_ids, PBAT_metadata$sample_id)]
+      
+      
+      methylKit:::readMethylRawDB(dbpath     = x,
+                                  sample.id  = sample_ids, 
+                                  dbtype     = "tabix",
+                                  assembly   = "hg38",
+                                  context    = "CpG",
+                                  resolution = "base")
+    })
+
+# converting the methylRaw objects into a methylRawList object
+PBATdb_filtered_normed <- 
+new("methylRawList",
+    PBATdb_filtered_normed,
+    treatment = PBAT_metadata[match(map_chr(PBATdb_filtered_normed, methylKit::getSampleID), PBAT_metadata$sample_id), "group", drop = TRUE] %>% as.factor() %>% as.numeric()
+    )
+
+plan("sequential")
+#######################################################
+
+```
+
+# Read methylation inside genomic windows
+```{r}
+
+# Methylation counts inside the probes
+plan("multisession", workers = 10)
+
+PBAT_counts <- 
+future_map(PBATdb_filtered_normed,
+           function(x){
+             
+             obj <- as(x, "methylRaw")
+             
+             methylKit::regionCounts(object       = obj, 
+                                     regions      = genome_windows,
+                                     cov.bases    = 2,
+                                     strand.aware = FALSE)                  
+                   
+                 }) %>% 
+set_names(map_chr(PBATdb_filtered_normed, getSampleID))
+
+plan("sequential")
+
+```
+
+# Methylation percentage objects
+```{r}
+
+# Converting methylRaw objects to GRanges
+PBAT_meth_ratio_gr <- 
+  PBAT_counts %>%
+  map2(names(.), function(x, y){
+  
+    gr <- as(x, "GRanges")
+    gr <- gr %>% .[.$coverage > 2]
+    elementMetadata(gr)[, y] <- (gr$numCs)/(gr$coverage)
+    gr[, y]
+  
+  }) %>% 
+  map(~ full_join(as.data.frame(genome_windows), as.data.frame(.x), by = c("seqnames", "start", "end", "strand"))) %>% 
+  purrr::reduce(cbind) %>%
+  select(c("seqnames", "start", "end", "strand", str_replace_all(names(PBAT_counts), "\\-", "\\."))) %>%
+  mutate(row_names = paste(seqnames, start, end, sep = ":")) %>%
+  column_to_rownames("row_names") %>% 
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# Creating matrix
+PBAT_meth_ratio_matrix <- 
+  as_tibble(PBAT_meth_ratio_gr) %>% 
+  select(-c("seqnames", "start", "end", "width", "strand")) %>%
+  as.matrix()
+
+# Correcting the sample names
+colnames(PBAT_meth_ratio_matrix) <- str_replace_all(colnames(PBAT_meth_ratio_matrix), "\\.", "\\-")
+
+# Adding probes as row names
+rownames(PBAT_meth_ratio_matrix) <- as.data.frame(genome_windows) %>% mutate(rows = paste(seqnames, start, end, sep = ":")) %>% pull(rows)
+
+# Changing the methylation object name
+PBAT_meth_ratio <- PBAT_meth_ratio_matrix
+
+```
+
+# Saving data
+```{r}
+
+save(
+chipseq_atacseq_normalized_counts,
+chipseq_atacseq_transformed_counts,
+PBAT_meth_ratio,
+file = "output/database/counts_in_windows_100CpGs.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

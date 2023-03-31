@@ -1,0 +1,109 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Differential Gene Expression (DGE)"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading RNA-Seq counts and filtering
+```{r}
+
+tximport <- tximport(files   = RNAseq_metadata %>% 
+                               .$file %>% 
+                               setNames(RNAseq_metadata %>% .$sample_id),
+                     type    = "salmon",
+                     tx2gene = txdf[,2:1])
+  
+dds <- 
+  DESeqDataSetFromTximport(txi     = tximport,
+                           colData = RNAseq_metadata,
+                           design  = as.formula("~ day"))
+
+```
+
+# DESeq2 results
+```{r}
+
+deseq2_analysis <- 
+list(
+"HNES1_d0.vs.HNES1_d10"            = c("HNES1 d0", "HNES1 d10"),
+"HNES1_d0.vs.H9_EOS"               = c("HNES1 d0", "H9-EOS"),
+"HNES1_d10.vs.H9_EOS"              = c("HNES1 d10", "H9-EOS"),
+
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d10"    = c("cR-H9-EOS d0", "cR-H9-EOS d10"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20X"   = c("cR-H9-EOS d0", "cR-H9-EOS d20X"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20E"   = c("cR-H9-EOS d0", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d0.vs.H9_EOS"           = c("cR-H9-EOS d0", "H9-EOS"),
+
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20X"  = c("cR-H9-EOS d10", "cR-H9-EOS d20X"),
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20E"  = c("cR-H9-EOS d10", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d10.vs.H9_EOS"          = c("cR-H9-EOS d10", "H9-EOS"),
+
+"cR_H9_EOS_d20X.vs.cR_H9_EOS_d20E" = c("cR-H9-EOS d20X", "cR-H9-EOS d20E"),
+"cR_H9_EOS_d20X.vs.H9_EOS"         = c("cR-H9-EOS d20X", "H9-EOS"),
+
+"cR_H9_EOS_d20E.vs.H9_EOS"         = c("cR-H9-EOS d20E", "H9-EOS")
+) %>% 
+map2(
+list(
+"HNES1_d0.vs.HNES1_d10"            = c("0", "10"),
+"HNES1_d0.vs.H9_EOS"               = c("0", "H9-EOS"),
+"HNES1_d10.vs.H9_EOS"              = c("10", "H9-EOS"),
+
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d10"    = c("0", "10"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20X"   = c("0", "20X"),
+"cR_H9_EOS_d0.vs.cR_H9_EOS_d20E"   = c("0", "20E"),
+"cR_H9_EOS_d0.vs.H9_EOS"           = c("0", "H9-EOS"),
+
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20X"  = c("10", "20X"),
+"cR_H9_EOS_d10.vs.cR_H9_EOS_d20E"  = c("10", "20E"),
+"cR_H9_EOS_d10.vs.H9_EOS"          = c("10", "H9-EOS"),
+
+"cR_H9_EOS_d20X.vs.cR_H9_EOS_d20E" = c("20X", "20E"),
+"cR_H9_EOS_d20X.vs.H9_EOS"         = c("20X", "H9-EOS"),
+
+"cR_H9_EOS_d20E.vs.H9_EOS"         = c("20E", "H9-EOS")
+),function(x, y){
+  
+  dds <- dds[,colnames(dds) %in% RNAseq_metadata[RNAseq_metadata$group %in% x, "sample_id", drop = T]]
+  dds$day <- factor(dds$day, levels = y)
+  
+  results <- DESeq(object = dds, parallel = T, BPPARAM  = MulticoreParam(20), modelMatrixType = "standard")
+  
+  deseq2_results <- DESeq2::results(results, alpha = 0.05, parallel = T, BPPARAM  = MulticoreParam(20))
+  
+  return(deseq2_results)
+})
+
+```
+
+# Saving results
+```{r}
+
+save(deseq2_analysis, file = "output/database/deseq2_results.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

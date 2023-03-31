@@ -1,0 +1,391 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Bivalency - flow chart"
+author:   "João Pedro Agostinho de Sousa"
+date:     "June 25, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Load the saved data
+```{r}
+
+# RNA-Seq counts
+load("output/database/rnaseq_counts.RData")
+
+# Promoter ChIP-seq and ATAC-seq counts
+load("output/database/chipseq_atacseq_counts_in_promoters.RData")
+
+# Promoter Methylation
+load("output/database/meth_ratio_in_annotated_regions.RData")
+PBAT_meth_ratio <- meth_ratio_in_annotated_regions$Promoters
+
+# ChIP-Seq and ATAC-Seq peaks
+load("output/database/chipseq_atacseq_peaks.RData")
+
+```
+
+# Selecting data only in autosomes
+```{r}
+
+macs_peaks_gr_in_autosomes <- macs_peaks_gr %>% .[seqnames(.) %in% 1:22]
+
+TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22]
+
+```
+
+# Categorizing promoters based on Methylation percentage
+```{r}
+
+PBAT_meth_ratio_by_group <- 
+  PBAT_meth_ratio %>%
+  left_join(genome_annotation$Promoters %>% as.data.frame() %>% select(seqnames, start, end, width, strand, gene_id)) %>% 
+  select(-seqnames, -start, -end, -strand, -width) %>% 
+  gather(sample_id, meth_ratio, -gene_id) %>%
+  left_join(unique(PBAT_metadata[,c("sample_id", "group")])) %>%
+  group_by(gene_id, group) %>% 
+  summarize(meth_ratio = mean(meth_ratio, na.rm = T)) %>% 
+  ungroup %>% 
+  mutate(Methylation = case_when(meth_ratio > 0.5 ~ 1, TRUE ~ 0)) %>% 
+  select(gene_id, group, Methylation)
+
+```
+
+# Bivalent promoters
+```{r}
+
+# index of the promoters that overlap with peaks 
+peaks_TSS_overlaps <- 
+map(macs_peaks_gr_in_autosomes$group %>% unique,
+    function(x){
+      map(macs_peaks_gr_in_autosomes$seqtype %>% unique,
+          ~ findOverlaps(
+            TSS_in_autosomes,
+            macs_peaks_gr_in_autosomes[macs_peaks_gr_in_autosomes$seqtype == .x & macs_peaks_gr_in_autosomes$group == x]) %>%
+            as.data.frame() %>%
+            pull(queryHits) %>%
+            unique
+          ) %>%
+        set_names(macs_peaks_gr_in_autosomes$seqtype %>% unique)
+      }
+    ) %>% set_names(macs_peaks_gr_in_autosomes$group %>% unique)
+
+# selecting promoters that overlap with peaks 
+peaks_in_TSS <- 
+map2(peaks_TSS_overlaps,
+     names(peaks_TSS_overlaps),
+     function(x, y){
+       x %>%
+       map2(names(.),
+            ~ TSS_in_autosomes %>%
+              as_tibble() %>% 
+              .[, c("gene_id"), drop = F] %>% 
+              rownames_to_column("index") %>% 
+              mutate(!!.y := case_when(index %in% .x ~ 1, TRUE ~ 0))
+            ) %>%
+         purrr::reduce(full_join) %>%
+         gather(seqtype, overlap, -index, -gene_id)
+       } %>%
+       dplyr::rename(!!y := overlap)
+     ) %>%
+  purrr::reduce(full_join) %>%
+  select(-index) %>%
+  gather(group, overlap, -seqtype, -gene_id)
+
+# categorizing promoters by overlapping with peaks
+peaks_in_TSS_by_type <- 
+  peaks_in_TSS %>%
+  named_group_split(group) %>%
+  map(~ .x %>% spread(seqtype, overlap) %>% 
+        left_join(PBAT_meth_ratio_by_group, by = c("gene_id", "group")) %>% 
+        mutate(promoter_type  = case_when(`ATAC-Seq`    == 1 ~ "ATAC-Seq"),
+               promoter_type  = case_when(`H3K4me3`     == 1  ~ paste(promoter_type, "H3K4me3", sep = ", "), TRUE ~ promoter_type),
+               promoter_type  = case_when(`H3K27ac`     == 1  ~ paste(promoter_type, "H3K27ac", sep = ", "), TRUE ~ promoter_type),
+               promoter_type  = case_when(`H3K4me1`     == 1  ~ paste(promoter_type, "H3K4me1", sep = ", "), TRUE ~ promoter_type),
+               promoter_type  = case_when(`H3K27me3`    == 1  ~ paste(promoter_type, "H3K27me3", sep = ", "),TRUE ~ promoter_type),
+               promoter_type  = case_when(`H3K9me3`     == 1  ~ paste(promoter_type, "H3K9me3", sep = ", "), TRUE ~ promoter_type),
+               promoter_type  = case_when(`Methylation` == 1  ~ paste(promoter_type, "Methylation", sep = ", "), TRUE ~ promoter_type),
+               promoter_type  = str_remove(promoter_type, "NA, ")) 
+      )
+
+# Adding a category column based on the promoter overlap with H3K4me3 and H3K27me3
+peaks_in_TSS_by_category <- 
+  peaks_in_TSS_by_type %>%
+  map(
+  ~ .x %>% 
+  mutate(promoter_category = case_when(
+  
+  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27me3", negate = T) ~ "H3K4me3",
+  str_detect(promoter_type, "H3K4me3", negate = T) & str_detect(promoter_type, "H3K27me3") ~ "H3K27me3",
+  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27me3")             ~ "Bivalent",
+  TRUE ~ "Other"
+  
+  ) %>% factor(levels = c("H3K4me3", "Bivalent", "H3K27me3", "Other")))
+)
+
+# Count of the number of promoters with the previously defined category
+TSS_category_summary_data <- 
+list("cR-H9-EOS" = c("cR-H9-EOS d0", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS"),
+     "HNES1"     = c("HNES1 d0", "HNES1 d10", "H9-EOS")) %>% 
+map(
+  ~ peaks_in_TSS_by_category[.x] %>%
+  map(
+    ~ select(.x, gene_id, group, promoter_category) %>% 
+      unique %>% 
+      group_by(group, promoter_category) %>% 
+      summarise(promoter_category_count = n()) %>% 
+      ungroup
+    ) %>%
+  purrr::reduce(rbind) %>%
+    mutate(group             = factor(group,             levels = c("HNES1 d0", "cR-H9-EOS d0", "HNES1 d10", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS")),
+           promoter_category = factor(promoter_category, levels = c("Bivalent", "H3K27me3", "H3K4me3", "Other")))
+)
+
+# Data for the flow plot
+flow_plot_data <- 
+  peaks_in_TSS_by_category %>%
+  map2(names(.),
+       ~ select(.x, gene_id, promoter_category) %>%
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(full_join) %>%
+  gather(group, promoter_category, -gene_id)
+                      
+# Filtering the data for the plot
+flow_plot_data_filtered <- 
+list("cR-H9-EOS" = c("cR-H9-EOS d0", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS"),
+     "HNES1"     = c("HNES1 d0", "HNES1 d10", "H9-EOS")) %>% 
+map2(names(.),
+~ flow_plot_data %>% 
+    filter(group %in% .x) %>%
+    spread(group, promoter_category) %>%
+    filter_at(.vars = vars(-"gene_id"), .vars_predicate = any_vars(!is.na(.))) %>% 
+    gather(group, promoter_category, -gene_id) %>% 
+    mutate(group = factor(group, levels = c(
+                                                    "HNES1 d0",
+                                                    "cR-H9-EOS d0",
+                                                    "HNES1 d3",
+                                                    "cR-H9-EOS d3",
+                                                    "HNES1 d10",
+                                                    "cR-H9-EOS d10",
+                                                    "cR-H9-EOS d20X", 
+                                                    "cR-H9-EOS d20E",
+                                                    "H9-EOS"
+                                                  ))) %>% 
+    group_by(promoter_category) %>%
+    mutate(freq_promoter_type = n()) %>%
+    ungroup %>%
+    mutate(cell = .y)
+) %>%
+  purrr::reduce(rbind) %>%
+  named_group_split(cell)
+
+
+# Changing group names
+flow_plot_data_filtered <- 
+map(flow_plot_data_filtered, function(x){
+  x$group <- str_replace(x$group, "^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+  x <- x %>% mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+  return(x)
+  })
+
+TSS_category_summary_data <- 
+map(TSS_category_summary_data, function(x){
+  x$group <- str_replace(x$group, "^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+  x <- x %>% mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+  return(x)
+  })
+
+# Flow plot
+bivalent_promoters_flow_plot <- 
+map2(flow_plot_data_filtered,
+     names(flow_plot_data_filtered),
+~ ggplot(.x %>% mutate(promoter_category = factor(promoter_category, levels = c("H3K4me3", "Bivalent", "H3K27me3", "Other"))),
+       aes(x        = group,
+           stratum  = forcats::fct_rev(promoter_category),
+           alluvium = gene_id,
+           fill     = forcats::fct_rev(promoter_category)),
+           label    = forcats::fct_rev(promoter_category)) +
+    scale_x_discrete(expand = c(.1, .1)) +
+    geom_flow(show.legend   = T,
+              color         = "black",
+              alpha         = 0.75,
+              min.y         = 100
+              ) +
+    geom_stratum(show.legend   = T) +
+    geom_text(data = TSS_category_summary_data[[.y]], mapping = aes(x = group, y = promoter_category_count, label = promoter_category_count), inherit.aes = F, position = position_stack(vjust = 0.5)) +
+    theme_publication() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.border     = element_blank(),
+          axis.line.y      = element_line(),
+          axis.ticks.x     = element_blank()) +
+    scale_y_continuous(position = "right") +
+    labs(x = "", y = "Number of promoters") +
+    scale_fill_manual(values = c("H3K4me3"     = brewer.pal(n = 11, name = "RdBu")[3],
+                                 "H3K27me3"    = brewer.pal(n = 11, name = "RdBu")[9],
+                                 "Bivalent"    = brewer.pal(n = 8, name = "Set2")[6],
+                                 "Other"    = "lightgray")
+                                 ) +
+    guides(fill = guide_legend(ncol = 1))
+)
+
+```
+
+# Gene ontology
+```{r}
+
+bivalent_d0_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d0", "cR-H9-EOS d0")), all_vars(. == "Bivalent")) %>%
+  pull(gene_id) %>% 
+  unique
+
+bivalent_d10_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d10", "cR-H9-EOS d10")), all_vars(. == "Bivalent")) %>%
+  pull(gene_id) %>% 
+  unique
+
+bivalent_H9EOS_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "Bivalent")) %>%
+  pull(gene_id) %>% 
+  unique
+
+bivalent_gene_ids <- 
+  peaks_in_TSS_by_category %>%
+  map2(names(.), ~ select(.x, gene_id, promoter_category) %>% dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(!contains("gene_id")), all_vars(. == "Bivalent")) %>%
+  pull(gene_id) %>% 
+  unique
+
+enrichGO_bivalent <- 
+enrichGO(gene          = bivalent_gene_ids,
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+enrichGO_d0 <- 
+enrichGO(gene          = bivalent_d0_gene_ids,
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+enrichGO_d10 <- 
+enrichGO(gene          = bivalent_d10_gene_ids,
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+enrichGO_H9EOS <- 
+enrichGO(gene          = bivalent_H9EOS_gene_ids,
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+enrichGO_d0_to_d10 <- 
+enrichGO(gene          = unique(setdiff(bivalent_d10_gene_ids, bivalent_d0_gene_ids)),
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+enrichGO_d10_to_H9EOS <- 
+enrichGO(gene          = unique(setdiff(bivalent_H9EOS_gene_ids, bivalent_d10_gene_ids) %>% setdiff(bivalent_d0_gene_ids)),
+         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.05,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/bivalency_1.svg", width = 12, height = 7)
+bivalent_promoters_flow_plot$`cR-H9-EOS`
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/bivalency_2.svg", width = 12, height = 7)
+bivalent_promoters_flow_plot$HNES1
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/bivalency_3.svg", width = 7.5, height = 5)
+pdf(file = "output/figures/03_condition_comparison/bivalency_3.pdf", width = 7.5, height = 5)
+barplot(enrichGO_bivalent, showCategory = 10) + labs(x = "Number of genes") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

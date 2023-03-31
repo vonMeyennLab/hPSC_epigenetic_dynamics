@@ -1,0 +1,305 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Genome-wide analysis - Peak percentage in annotated regions"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading peak data
+```{r}
+
+load(file = "output/database/chipseq_atacseq_peaks.RData")
+
+```
+
+# Chosing the annotations
+```{r}
+
+genome_annotation_subset <- 
+  genome_annotation %>% .[c("CGI Promoters", "Non-CGI Promoters", "CpG islands", "Distal Naïve enhancers", "Distal Primed enhancers", "Exons", "Introns", "Repeats", "Intergenic regions")] %>% GRangesList()
+
+```
+
+# Quantification plots > ChIP-Seq (with duplicated)
+```{r}
+
+######################################################################
+# creating a dataframe with the number of peaks that overlap annotations (with duplicated)
+annot_peaks_counts_w_duplicates_df <- 
+ macs_peaks_gr %>%
+ .[seqnames(.) %in% 1:22] %>% 
+ .[!.$day == 3] %>% 
+ as.data.frame() %>%
+ named_group_split(seqtype) %>%
+ map2_df(names(.),
+ function(x, y){  
+       named_group_split(x, sample_id) %>%
+       map(~ GenomicRanges::makeGRangesFromDataFrame(.x, keep.extra.columns = TRUE)) %>%
+       map2(names(.), ~ annotate_regions_by_frequency(genomic_regions             = .x, 
+                                                      annotation_list             = genome_annotation_subset,
+                                                      name                        = .y, 
+                                                      with_duplicated_annotations = TRUE,
+                                                      apply_GRanges_reduce        = FALSE)) %>% 
+       dplyr::bind_rows() %>% mutate(seqtype = y) 
+ }) 
+
+
+annot_peaks_counts_w_duplicates_df <- 
+ annot_peaks_counts_w_duplicates_df %>% 
+ left_join(RNAseq_metadata %>% select(-file), by = c("experiment" = "sample_id")) %>%
+ arrange(day, cell, replicate) %>%
+ mutate(group = factor(group, levels = unique(group))) %>%
+ mutate(experiment = factor(experiment, levels = unique(experiment)),
+        annotation = factor(annotation, levels = c("CGI Promoters", "Non-CGI Promoters", "CpG islands", "Distal Naïve enhancers", "Distal Primed enhancers", "Exons", "Introns", "Repeats", "Intergenic regions"))) %>% 
+ group_by(seqtype, annotation, group) %>%
+ mutate(mean_frequency = mean(frequency),
+        mean_counts    = mean(counts)) %>% 
+ ungroup() %>%
+ mutate(seqtype = factor(seqtype, levels = c("ATAC-Seq", "H3K4me3", "H3K27ac", "H3K4me1", "H3K27me3", "H3K9me3",  "Methylation")))
+######################################################################
+
+######################################################################
+# Changing group names
+annot_peaks_counts_w_duplicates_df$group <- annot_peaks_counts_w_duplicates_df$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+annot_peaks_counts_w_duplicates_df       <- annot_peaks_counts_w_duplicates_df %>% mutate(group = factor(group, levels = unique(group)))
+######################################################################
+
+######################################################################
+# plot the percentage of peaks in annotation
+plot_peak_perc_annotated_w_duplicates <- 
+ggplot(data    = annot_peaks_counts_w_duplicates_df,
+       mapping = aes(fct_rev(group), frequency*100, fill = fct_rev(annotation))) +
+    geom_bar(data        = annot_peaks_counts_w_duplicates_df %>%
+                           select(seqtype, annotation, group, mean_frequency) %>%
+                           unique,
+             mapping     = aes(y = mean_frequency*100),
+             stat        = 'identity',
+             color       = "black",
+             show.legend = F) +
+    stat_summary(fun.data    = mean_se,
+                 geom        = "errorbar",
+                 show.legend = F,
+                 color       = "black",
+                 width       = .5) +
+    theme_publication() +
+    theme(axis.text.y      = element_text(size = 10),
+          axis.text.x      = element_text(size = 10),
+          strip.text       = element_text(size = 10),
+          legend.position  = "right",
+          legend.key.size  = unit(0.4, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.margin    = margin(l = -10)) +
+    scale_y_continuous(expand = c(0.05, 0)) +
+    scale_fill_manual(values = c(
+      "CGI Promoters"          = brewer.pal(name = "Blues", n = 9)[9],
+      "Non-CGI Promoters"      = brewer.pal(name = "Blues", n = 9)[8],
+      "CpG islands"            = brewer.pal(name = "Blues", n = 9)[7],
+      "Naïve enhancers"        = brewer.pal(name = "Blues", n = 9)[6],
+      "Primed enhancers"       = brewer.pal(name = "Blues", n = 9)[4],
+      "Exons"                  = brewer.pal(name = "Blues", n = 9)[2],
+      "Introns"                = brewer.pal(name = "RdBu", n = 11)[4],
+      "Repeats"                = brewer.pal(name = "RdBu", n = 11)[3],
+      "Intergenic regions"     = brewer.pal(name = "RdBu", n = 11)[2]
+      )) + 
+    xlab('') +
+    ylab('Percentage of peaks (%)') +
+    coord_flip() +
+    facet_grid(seqtype ~ annotation, scales = "free", labeller = label_wrap_gen(width = 10)) +
+    guides(fill = guide_legend(reverse = T, title = "", ncol = 1, direction = "vertical"))
+######################################################################
+
+```
+
+# Quantification plots > ChIP-Seq (without duplicated)
+```{r}
+
+######################################################################
+# creating a dataframe with the number of peaks that overlap annotations (with duplicated)
+annot_peaks_counts_df <- 
+ macs_peaks_gr %>%
+ .[seqnames(.) %in% 1:22] %>% 
+ .[!.$day == 3] %>% 
+ as.data.frame() %>%
+ named_group_split(seqtype) %>%
+ map2_df(names(.),
+ function(x, y){  
+       named_group_split(x, sample_id) %>%
+       map(~ GenomicRanges::makeGRangesFromDataFrame(.x, keep.extra.columns = TRUE)) %>%
+       map2(names(.), ~ annotate_regions_by_frequency(genomic_regions             = .x, 
+                                                      annotation_list             = genome_annotation_subset,
+                                                      name                        = .y, 
+                                                      with_duplicated_annotations = FALSE,
+                                                      apply_GRanges_reduce        = FALSE)) %>% 
+       dplyr::bind_rows() %>% mutate(seqtype = y) 
+ }) 
+
+
+annot_peaks_counts_df <- 
+ annot_peaks_counts_df %>% 
+ left_join(RNAseq_metadata %>% select(-file), by = c("experiment" = "sample_id")) %>%
+ arrange(day, cell, replicate) %>%
+ mutate(group = factor(group, levels = unique(group))) %>%
+ mutate(experiment = factor(experiment, levels = unique(experiment)),
+        annotation = factor(annotation, levels = c("CGI Promoters", "Non-CGI Promoters", "CpG islands", "Distal Naïve enhancers", "Distal Primed enhancers", "Exons", "Introns", "Repeats", "Intergenic regions"))) %>% 
+ group_by(seqtype, annotation, group) %>%
+ mutate(mean_frequency = mean(frequency),
+        mean_counts    = mean(counts)) %>% 
+ ungroup() %>%
+ mutate(seqtype = factor(seqtype, levels = c("ATAC-Seq", "H3K4me3", "H3K27ac", "H3K4me1", "H3K27me3", "H3K9me3",  "Methylation")))
+######################################################################
+
+######################################################################
+# Changing group names
+annot_peaks_counts_df$group <- annot_peaks_counts_df$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+annot_peaks_counts_df       <- annot_peaks_counts_df %>% mutate(group = factor(group, levels = unique(group)))
+######################################################################
+
+######################################################################
+# plot the percentage of peaks in annotation
+plot_peak_perc_annotated <- 
+ggplot(data    = annot_peaks_counts_df,
+       mapping = aes(fct_rev(group), frequency*100, fill = fct_rev(annotation))) +
+    geom_bar(data        = annot_peaks_counts_df %>%
+                           select(seqtype, annotation, group, mean_frequency) %>%
+                           unique,
+             mapping     = aes(y = mean_frequency*100),
+             stat        = 'identity',
+             color       = "black",
+             show.legend = F) +
+    theme_publication() +
+    theme(axis.text.y      = element_text(size = 10),
+          axis.text.x      = element_text(size = 10),
+          strip.text       = element_text(size = 10),
+          legend.position  = "left",
+          legend.key.size  = unit(0.4, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), 
+          panel.border     = element_blank(),
+          legend.margin    = margin(l = -10), 
+          strip.text.y     = element_text(angle = 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_fill_manual(values = c(
+      "CGI Promoters"                 = brewer.pal(name = "RdBu", n = 11)[11],
+      "Non-CGI Promoters"             = brewer.pal(name = "RdBu", n = 11)[10],
+      "CpG islands"                   = brewer.pal(name = "RdBu", n = 11)[8],
+      "Distal Naïve enhancers"        = brewer.pal(name = "Purples", n = 9)[7],
+      "Distal Primed enhancers"       = brewer.pal(name = "Purples", n = 9)[3],
+      "Exons"                         = brewer.pal(name = "RdBu", n = 11)[5],
+      "Introns"                       = brewer.pal(name = "RdBu", n = 11)[4],
+      "Repeats"                       = brewer.pal(name = "RdBu", n = 11)[3],
+      "Intergenic regions"            = brewer.pal(name = "RdBu", n = 11)[2]
+      )) + 
+    xlab('') +
+    ylab('Percentage of peaks (%)') +
+    coord_flip() +
+    facet_grid(seqtype ~ ., scales = "free", labeller = label_wrap_gen(width = 10)) +
+    guides(fill = guide_legend(reverse = T, title = "", ncol = 1, direction = "vertical"))
+######################################################################
+
+
+
+######################################################################
+# plot the number of peaks in annotation
+plot_peak_number_annotated <- 
+ggplot(data    = annot_peaks_counts_df, 
+       mapping = aes(fct_rev(group), counts/1000)) +
+    geom_bar(data    = annot_peaks_counts_df %>% select(seqtype, annotation, group, mean_counts) %>% unique,
+             mapping = aes(y = mean_counts/1000),
+             stat    = 'identity',
+             fill    = brewer.pal(11, "RdBu")[2],
+             color   = "black") +
+    stat_summary(fun.data = mean_se, geom = "errorbar", show.legend = F, color = "black", width = .5) +
+    theme_publication() +
+    theme(axis.text.x      = element_text(size = 10),
+          axis.text.y      = element_blank(),
+          axis.ticks.y     = element_blank(),
+          strip.text       = element_text(size = 10),
+          legend.position  = "right",
+          legend.key.size  = unit(0.4, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.margin    = margin(l = -10),
+          strip.text.y     = element_text(angle = 0)) +
+    scale_y_continuous(expand = c(0.05, 0)) +
+    scale_fill_brewer(palette = 'Paired', direction = -1) +
+    xlab('') +
+    ylab('Number of peaks (in thousands)') +
+    coord_flip() +
+    facet_grid(seqtype ~ annotation, scale = "free") +
+    guides(fill = guide_legend(reverse = T, title = "", ncol = 1, direction = "vertical"))
+
+
+# plot the total number of peaks
+plot_peak_total_number_annotated <-
+ggplot(data    = annot_peaks_counts_df %>% 
+                 group_by(seqtype, experiment, group) %>% 
+                 summarise(total_counts = sum(counts)) %>%
+                 ungroup, 
+       mapping = aes(fct_rev(group), total_counts/1000)) +
+    geom_bar(data    = annot_peaks_counts_df %>%
+                       group_by(seqtype, experiment, group) %>%
+                       summarise(total_counts = sum(counts)) %>%
+                       ungroup %>%
+                       group_by(seqtype, group) %>% 
+                       summarise(mean_total_counts = mean(total_counts)) %>% 
+                       ungroup,
+             mapping = aes(y = mean_total_counts/1000),
+             stat    = 'identity',
+             fill    = brewer.pal(9, "Greys")[6],
+             color   = "black") +
+    stat_summary(fun.data = mean_se, geom = "errorbar", show.legend = F, color = "black", width = .5) +
+    theme_publication() +
+    theme(axis.text.x      = element_text(size = 7),
+          axis.text.y      = element_blank(),
+          axis.ticks.y     = element_blank(),
+          strip.text       = element_text(size = 10),
+          legend.position  = "right",
+          legend.key.size  = unit(0.4, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.title       = element_text(hjust = 0.5),
+          legend.margin    = margin(l = -10),
+          strip.text.y     = element_text(angle = 0)) +
+    scale_y_continuous(expand = c(0.05, 0)) +
+    scale_fill_brewer(palette = 'Paired', direction = -1) +
+    labs(x = "", y = "Number of peaks (in thousands)", title = "Number of peaks") +
+    coord_flip() +
+    facet_wrap(seqtype ~ ., scale = "free_x", ncol = 1) +
+    guides(fill = guide_legend(reverse = T, title = "", ncol = 1, direction = "vertical"))
+######################################################################
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/02_genome_wide_analysis/peak_percentage_annotated_regions_1.svg", width = 7, height = 10)
+list(plot_peak_perc_annotated, plot_peak_total_number_annotated) %>% wrap_plots(ncol = 2, nrow = 1, widths = c(1, 0.3))
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

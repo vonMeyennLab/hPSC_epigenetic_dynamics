@@ -1,0 +1,125 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "MOFA2 model"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading results from MOFA2 factor 1
+```{r}
+
+plot_data <- readRDS(file = "output/database/MOFA2_w_methylation_plot_data.rds")
+
+# USER SET
+userSets_signif <- 
+  plot_data %>%
+  filter(abs(value) > 0.5) %>% 
+  select(feature, feature_type) %>%
+  unique %>%
+  named_group_split(feature_type) %>%
+  map(~
+        tidyr::separate(.x, feature, c("chr", "start", "end"), sep = ":") %>%
+        makeGRangesFromDataFrame(keep.extra.columns = T)
+      )
+
+# UNIVERSE SET
+universeSets <- 
+  plot_data %>%
+  filter(abs(value) <= 0.5) %>% 
+  select(feature, feature_type) %>%
+  unique %>%
+  named_group_split(feature_type) %>%
+  map(~
+        tidyr::separate(.x, feature, c("chr", "start", "end"), sep = ":") %>%
+        makeGRangesFromDataFrame(keep.extra.columns = T)
+      )
+
+```
+
+# Save FASTA sequence inside peaks
+```{r}
+
+save_peak_fasta <- 
+function(userSet, userSet_name, universeSet){
+  
+  # Significant peaks
+  signif_peaks <- userSet
+  
+  # Non-significant peaks
+  nonsignif_peaks <- subsetByOverlaps(universeSet, signif_peaks, invert = T)
+  
+  # Selecting only the center of the peaks
+  signif_peaks <- resize(signif_peaks, 500, fix = "center")
+  nonsignif_peaks <- resize(nonsignif_peaks, 500, fix = "center")
+  
+  seqlevels(signif_peaks, pruning.mode = "coarse") <- c(1:22, "X", "Y")
+  seqlevels(nonsignif_peaks, pruning.mode = "coarse") <- c(1:22, "X", "Y")
+  signif_peaks <- renameSeqlevels(signif_peaks, mapSeqlevels(seqlevels(signif_peaks), "UCSC"))
+  nonsignif_peaks <- renameSeqlevels(nonsignif_peaks, mapSeqlevels(seqlevels(nonsignif_peaks), "UCSC"))
+  
+  # Significant peaks
+  signif_peaks_FASTA <-
+    getSeq(BSgenome.Hsapiens.UCSC.hg38, signif_peaks)
+  
+  names(signif_peaks_FASTA) <- 
+    paste0(seqnames(signif_peaks), 
+           ":", 
+           start(signif_peaks), 
+           "-", 
+           end(signif_peaks))
+  
+  # Non-significant peaks
+  nonsignif_peaks_FASTA <-
+    getSeq(BSgenome.Hsapiens.UCSC.hg38, nonsignif_peaks)
+  
+  names(nonsignif_peaks_FASTA) <- 
+    paste0(seqnames(nonsignif_peaks), 
+           ":", 
+           start(nonsignif_peaks), 
+           "-", 
+           end(nonsignif_peaks))
+  
+  writeXStringSet(signif_peaks_FASTA, file = paste0("output/database/motifs/", userSet_name, "_", "signif_peaks.fa"))
+  writeXStringSet(nonsignif_peaks_FASTA, file = paste0("output/database/motifs/", userSet_name, "_", "nonsignif_peaks.fa"))
+  
+}
+
+save_peak_fasta(userSet = userSets_signif$`Methylation.Primed (26401)`, userSet_name = "methylation_primed", universeSet = universeSets$`Methylation.Primed (26401)`)
+save_peak_fasta(userSet = userSets_signif$`H3K27me3.Naive (69498)`,     userSet_name = "H3K27me3_naive",     universeSet = universeSets$`H3K27me3.Naive (69498)`)
+save_peak_fasta(userSet = userSets_signif$`ATAC-seq.Primed (22908)`,    userSet_name = "atacseq_primed",     universeSet = universeSets$`ATAC-seq.Primed (22908)`)
+save_peak_fasta(userSet = userSets_signif$`ATAC-seq.Naive (7695)`,      userSet_name = "atacseq_naive",      universeSet = universeSets$`ATAC-seq.Naive (7695)`)
+save_peak_fasta(userSet = userSets_signif$`H3K4me3.Naive (4594)`,       userSet_name = "H3K4me3_naive",      universeSet = universeSets$`H3K4me3.Naive (4594)`)
+save_peak_fasta(userSet = userSets_signif$`H3K4me1.Naive (20751)`,      userSet_name = "H3K4me1_naive",      universeSet = universeSets$`H3K4me1.Naive (20751)`)
+save_peak_fasta(userSet = userSets_signif$`H3K27ac.Naive (18043)`,      userSet_name = "H3K27ac_naive",      universeSet = universeSets$`H3K27ac.Naive (18043)`)
+save_peak_fasta(userSet = userSets_signif$`H3K27me3.Primed (10988)`,    userSet_name = "H3K27me3_primed",    universeSet = universeSets$`H3K27me3.Primed (10988)`)
+save_peak_fasta(userSet = userSets_signif$`H3K9me3.Naive (13943)`,      userSet_name = "H3K9me3_naive",      universeSet = universeSets$`H3K9me3.Naive (13943)`)
+save_peak_fasta(userSet = userSets_signif$`H3K27ac.Primed (12150)`,     userSet_name = "H3K27ac_primed",     universeSet = universeSets$`H3K27ac.Primed (12150)`)
+save_peak_fasta(userSet = userSets_signif$`H3K4me3.Primed (3794)`,     userSet_name = "H3K4me3_primed",     universeSet = universeSets$`H3K4me3.Primed (3794)`)
+save_peak_fasta(userSet = userSets_signif$`H3K4me1.Primed (41376)`,    userSet_name = "H3K4me1_primed",     universeSet = universeSets$`H3K4me1.Primed (41376)`)
+save_peak_fasta(userSet = userSets_signif$`H3K9me3.Primed (6141)`,    userSet_name = "H3K9me3_primed",     universeSet = universeSets$`H3K9me3.Primed (6141)`)
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

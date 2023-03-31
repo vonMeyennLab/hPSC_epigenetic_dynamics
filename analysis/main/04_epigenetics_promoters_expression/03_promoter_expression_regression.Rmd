@@ -1,0 +1,537 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Promoter and gene expression analysis"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading promoter counts
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- unique(counts_in_promoters_full)
+
+```
+
+# Options for the regression analysis
+```{r}
+
+# Selecting only protein-coding genes
+promoters_protein_coding <- 
+  genome_annotation$Promoters %>%
+  .[names(.) %in% (edb_gene_attributes %>% filter(gene_biotype == "protein_coding") %>% pull(gene_id) %>% unique)]
+
+seqlevels(promoters_protein_coding, pruning.mode = "coarse") <- c(1:22, "X", "Y")
+promoters_protein_coding <- renameSeqlevels(promoters_protein_coding, mapSeqlevels(seqlevels(promoters_protein_coding), "UCSC"))
+
+# Creating a FASTA file from the promoters
+promoters_protein_coding_fasta <- getSeq(BSgenome.Hsapiens.UCSC.hg38, promoters_protein_coding)
+
+# Calculating the observed vs expected ratio of CpGs
+n_CG_promoters <- BSgenome::oligonucleotideFrequency(promoters_protein_coding_fasta, width = 2) %>% .[,"CG"]
+n_C_promoters <- BSgenome::oligonucleotideFrequency(promoters_protein_coding_fasta, width = 1) %>% .[,"C"]
+n_G_promoters <- BSgenome::oligonucleotideFrequency(promoters_protein_coding_fasta, width = 1) %>% .[,"G"]
+
+OE_ratio_promoters <- (n_CG_promoters*4000)/(n_C_promoters*n_G_promoters)
+
+OE_ratio_plot <- 
+  OE_ratio_promoters %>%
+  tibble(OE_ratio = .) %>%
+  ggplot(aes(OE_ratio)) +
+  geom_histogram(bins = 100, color = "black", fill = "blue") +
+  geom_vline(xintercept = 0.35, color = "red") +
+  geom_vline(xintercept = 0.7, color = "red") +
+  theme_publication() +
+  labs(x = "Observed/Expected CpG density ratio", y = "Number of promoters")
+
+# Splitting promoters based on CpG density
+promoter_high_CpG_density   <- promoters_protein_coding_fasta[which(OE_ratio_promoters > 0.7),] %>% names %>% unique
+promoter_medium_CpG_density <- promoters_protein_coding_fasta[which(OE_ratio_promoters >= 0.35 & OE_ratio_promoters <= 0.7),] %>% names %>% unique
+promoter_low_CpG_density    <- promoters_protein_coding_fasta[which(OE_ratio_promoters < 0.35),] %>% names %>% unique
+
+```
+
+# Multiple regression options
+```{r}
+
+multiple_regression_data_list <-
+list(
+     "Promoters (High CpG density)" = 
+       counts_in_promoters_full %>%
+       filter(seqnames %in% 1:22) %>%
+       mutate_at(.vars = vars(-gene_id, -seqnames, -group, -CGI, -gene_biotype), .funs = ~ scales::rescale(.x, to = c(0,1))) %>%
+       filter(gene_biotype %in% "protein_coding") %>%
+       filter(gene_id %in% promoter_high_CpG_density),
+     
+     "Promoters (Medium CpG density)" = 
+       counts_in_promoters_full %>%
+       filter(seqnames %in% 1:22) %>%
+       mutate_at(.vars = vars(-gene_id, -seqnames, -group, -CGI, -gene_biotype), .funs = ~ scales::rescale(.x, to = c(0,1))) %>%
+       filter(gene_biotype %in% "protein_coding") %>%
+       filter(gene_id %in% promoter_medium_CpG_density),
+     
+     "Promoters (Low CpG density)" = 
+       counts_in_promoters_full %>%
+       filter(seqnames %in% 1:22) %>% 
+       mutate_at(.vars = vars(-gene_id, -seqnames, -group, -CGI, -gene_biotype), .funs = ~ scales::rescale(.x, to = c(0,1))) %>%
+       filter(gene_biotype %in% "protein_coding") %>% 
+       filter(gene_id %in% promoter_low_CpG_density)
+)
+
+# Multiple regression settings
+formula <- `RNA-Seq` ~ `ATAC-Seq` + H3K27ac + H3K27me3 + H3K4me1 + H3K4me3 + H3K9me3 + Methylation
+boot_t <- 1000
+
+```
+
+# R-Squared
+```{r}
+
+global_rsq_plot_data <- 
+map(multiple_regression_data_list, ~ get_global_rsq_plot_data(.x, formula, boot_t))
+
+global_rsq_plot <- 
+    global_rsq_plot_data %>%
+    map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+    left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+    mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+    mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+    mutate(gene_set = factor(gene_set, levels = c("Promoters (Low CpG density)", "Promoters (Medium CpG density)", "Promoters (High CpG density)"))) %>% 
+    ggplot(aes(group, rsq, fill = color)) +
+	  geom_col(show.legend = F, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = rsq_l, ymax = rsq_u), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+    scale_fill_identity(aes(color)) +
+	  theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1),
+	        panel.grid.major = element_blank(), 
+	        panel.grid.minor = element_blank()) +
+	  labs(x = "", y = "Adjusted R-squared") +
+    scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    facet_wrap(gene_set ~ ., ncol = 1)
+
+```
+
+# Regression estimate
+```{r}
+
+regression_estimate_data <- map(multiple_regression_data_list, ~ get_regression_estimate_data(.x, formula, boot_t))
+
+regression_estimate_plot <- 
+  regression_estimate_data %>% 
+  map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+  left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+  mutate(
+  variable = factor(variable, levels = c(
+  "ATAC-Seq",
+  "H3K4me3",
+  "H3K27ac",
+  "H3K4me1",
+  "H3K27me3",
+  "H3K9me3",
+  "Methylation"
+  ))
+  ) %>%
+    mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+    mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+    mutate(gene_set = factor(gene_set, levels = c("Promoters (Low CpG density)", "Promoters (Medium CpG density)", "Promoters (High CpG density)"))) %>%
+ggplot(aes(variable, regression_coefficient, group = group, fill = color)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = confidence_interval_low, ymax = confidence_interval_high), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(), 
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "Regression coefficient estimate") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+
+```
+
+# Relative importance of regressors
+```{r}
+
+relative_importance_data <- map(multiple_regression_data_list, ~ get_relative_importance_data(.x, formula, boot_t))
+
+relative_importance_data_plot <- 
+  relative_importance_data %>%
+  map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+  left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+  mutate(seqtype = factor(seqtype, levels = c(
+  "ATAC-Seq",
+  "H3K4me3",
+  "H3K27ac",
+  "H3K4me1",
+  "H3K27me3",
+  "H3K9me3",
+  "Methylation"
+  ))) %>%
+  mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+  mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+  mutate(gene_set = factor(gene_set, levels = c("Promoters (Low CpG density)", "Promoters (Medium CpG density)", "Promoters (High CpG density)")))
+
+relative_importance_data_plot_lmg <- 
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(lmg)) %>%
+  ggplot(aes(seqtype, lmg*100, fill = color, group = group)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = lmg_lower*100, ymax = lmg_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "% of R-squared") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+   
+relative_importance_data_plot_first <-
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(first)) %>% 
+  ggplot(aes(seqtype, first*100, fill = color, group = group)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = first_lower*100, ymax = first_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "% of R-squared") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+
+relative_importance_data_plot_last <-
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(last)) %>% 
+  ggplot(aes(seqtype, last*100, fill = color, group = group)) +
+	geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	geom_errorbar(aes(ymin = last_lower*100, ymax = last_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	labs(x = "", y = "% of R-squared") +
+  scale_fill_identity(aes(color)) +
+  facet_grid(gene_set ~ .)
+
+```
+
+# Gene ontology
+```{r}
+
+# Selecting bivalent promoters common between conditions
+bivalent_promoters <- 
+list(
+unique(genome_annotation$`Bivalent promoters cR-H9 d0`$gene_id),
+unique(genome_annotation$`Bivalent promoters cR-H9 d10`$gene_id),
+unique(genome_annotation$`Bivalent promoters cR-H9 d20X`$gene_id),
+unique(genome_annotation$`Bivalent promoters cR-H9 d20E`$gene_id),
+unique(genome_annotation$`Bivalent promoters H9 Primed`$gene_id),
+unique(genome_annotation$`Bivalent promoters HNES1 d0`$gene_id),
+unique(genome_annotation$`Bivalent promoters HNES1 d10`$gene_id)
+) %>% purrr::reduce(intersect)
+
+# Selecting only protein-coding genes
+bivalent_promoters <- intersect(bivalent_promoters, unique(names(promoters_protein_coding_fasta)))
+
+# Gene ontology
+enrichGO_results <- 
+map(
+list("Promoter (low CpG density)"    = promoter_low_CpG_density,
+     "Promoter (medium CpG density)" = promoter_medium_CpG_density,
+     "Promoter (high CpG density)"   = promoter_high_CpG_density,
+     "Bivalent promoters"            = bivalent_promoters), function(x){
+       
+     GOterms <- 
+      enrichGO(gene          = x,
+               universe      = unique(names(promoters_protein_coding_fasta)),
+               keyType       = "ENSEMBL",
+               OrgDb         = org.Hs.eg.db,
+               ont           = "BP",
+               pAdjustMethod = "BH",
+               qvalueCutoff  = 0.01,
+               readable      = TRUE
+               ) %>%
+        clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+       
+     })
+
+# KEGG pathways
+enrichKEGG_results <-
+map(list("Promoter (low CpG density)"    = promoter_low_CpG_density,
+         "Promoter (medium CpG density)" = promoter_medium_CpG_density,
+         "Promoter (high CpG density)"   = promoter_high_CpG_density,
+         "Bivalent promoters"            = bivalent_promoters),  
+    function(x){
+      
+gene_entrez <- mapIds(x         = org.Hs.eg.db,
+                      keys      = x,
+                      column    = "ENTREZID",
+                      keytype   = "ENSEMBL",
+                      multiVals = "first")
+
+universe_entrez <- mapIds(x        = org.Hs.eg.db,
+                         keys      = unique(names(promoters_protein_coding_fasta)),
+                         column    = "ENTREZID",
+                         keytype   = "ENSEMBL",
+                         multiVals = "first")
+
+kegg_results <-
+enrichKEGG(gene          = gene_entrez,
+           organism      = "hsa",
+           keyType       = "kegg",
+           pvalueCutoff  = 0.01,
+           pAdjustMethod = "BH",
+           universe      = universe_entrez,
+           qvalueCutoff  = 0.01) %>% 
+  setReadable(OrgDb = org.Hs.eg.db, keyType = "ENTREZID")
+
+return(kegg_results)
+})
+
+```
+
+# CpG density in promoters of pluripotency genes
+```{r}
+
+# Counts in promoters with CpG density
+TSS_CpG_data <-
+  counts_in_promoters_full %>% 
+  gather(seqtype, value, -c("gene_id", "RNA-Seq", "group", "seqnames", "gene_biotype")) %>%
+  inner_join(tibble(gene_id = names(promoters_protein_coding_fasta), OE_ratio = OE_ratio_promoters)) %>%
+  left_join(edb_gene_attributes[, c("gene_id", "gene_name")] %>% unique)
+
+# Selecting bivalent promoters common between conditions
+bivalent_promoters <- 
+list(
+unique(genome_annotation$`Bivalent promoters cR-H9 d0`$gene_name),
+unique(genome_annotation$`Bivalent promoters cR-H9 d10`$gene_name),
+unique(genome_annotation$`Bivalent promoters cR-H9 d20X`$gene_name),
+unique(genome_annotation$`Bivalent promoters cR-H9 d20E`$gene_name),
+unique(genome_annotation$`Bivalent promoters H9 Primed`$gene_name),
+unique(genome_annotation$`Bivalent promoters HNES1 d0`$gene_name),
+unique(genome_annotation$`Bivalent promoters HNES1 d10`$gene_name)
+) %>% purrr::reduce(intersect)
+
+# Selecting only protein-coding genes from the bivalent promoters genes
+bivalent_promoters <- intersect(bivalent_promoters, (edb_gene_attributes %>% .[rownames(.) %in% unique(names(promoters_protein_coding_fasta)), ] %>% pull(gene_name) %>% unique))
+
+# Genes selected for analysis
+pluripotency_genes <- list(
+  "Naive pluripotency"         = c("KLF4", "KLF5",	"TFCP2L1", "DNMT3L", "FGF4", "KLF17"),
+  
+  "General pluripotency"       = c("NANOG", "POU5F1", "SALL4",	"SOX2", "TDGF1"),
+  
+  "Post-implantation epiblast" = c("ETV4", "ETV5", "MYC", "SOX11", "FZD7", "CDH2", "SALL2", "SFRP2", "ZIC2", "FGF2", "TCF7L1"),
+  
+  "Lineage markers"            = c("SOX1", "PAX6", "NEUROG1", "NEUROG2", "ASCL1", "ZIC1", "EOMES", "GATA4", "GATA6", "TBXT", "CDX2", "MEOX1", "FOXF1", "FOXA2", "SOX7", "SOX17")
+  )
+
+# Dataframe for the plots
+counts_vs_density_by_pluripotency_data <- 
+  list(
+  TSS_CpG_data %>%
+    filter(gene_name %in% pluripotency_genes$`Naive pluripotency`) %>% 
+    mutate(selected_genes = "Naive pluripotency"),
+  
+  TSS_CpG_data %>%
+    filter(gene_name %in% pluripotency_genes$`General pluripotency`) %>% 
+    mutate(selected_genes = "General pluripotency"),
+  
+  TSS_CpG_data %>%
+    filter(gene_name %in% pluripotency_genes$`Post-implantation epiblast`) %>% 
+    mutate(selected_genes = "Post-implantation epiblast"),
+  
+  TSS_CpG_data %>%
+    filter(gene_name %in% pluripotency_genes$`Lineage markers`) %>% 
+    mutate(selected_genes = "Lineage markers"),
+  
+  TSS_CpG_data %>%
+    filter(gene_name %in% bivalent_promoters) %>% 
+    mutate(selected_genes = "Bivalent promoters"),
+  
+  TSS_CpG_data %>% 
+    mutate(selected_genes = "All protein-coding genes")) %>% 
+  purrr::reduce(rbind) %>% 
+  mutate(selected_genes = factor(selected_genes, levels = c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters", "All protein-coding genes"))) %>% 
+  mutate(alpha_value = case_when(selected_genes == "All protein-coding genes" ~ 0.1, TRUE ~ 1)) %>% 
+  select(gene_id, group, `RNA-Seq`, gene_biotype, seqtype, value, OE_ratio, selected_genes, gene_name, alpha_value) %>%
+  filter(gene_biotype == "protein_coding") %>%
+  filter(seqtype %in% c("H3K27me3", "H3K4me3")) %>% 
+  mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+  mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+
+# Extracting the CpG density of the pluripotency genes
+selected_genes_CpG_density <- 
+  counts_vs_density_by_pluripotency_data %>% 
+  filter(group == "H9 Primed") %>% 
+  filter(seqtype == "H3K27me3") %>%
+  select(gene_id, OE_ratio, selected_genes) %>%
+  unique %>% 
+  named_group_split(selected_genes) %>% 
+  map(~ na.omit(.x) %>% pull(OE_ratio))
+
+# T-test results
+ttest_results <- 
+map(selected_genes_CpG_density,
+~ t.test(
+.x,
+selected_genes_CpG_density$`All protein-coding genes`, conf.level = 0.95
+))
+
+# T-test dataframe
+ttest_df <- 
+tibble(
+  .y.             = rep("OE_ratio", 5),
+  y.position      = c(1.5, 1.4, 1.3, 1.2, 1.1),
+  selected_genes  = c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters"),
+  group1          = c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters"),
+  group2          = c("All protein-coding genes", "All protein-coding genes", "All protein-coding genes", "All protein-coding genes", "All protein-coding genes"),
+  statistic       = c(ttest_results$`Naive pluripotency`[[1]], ttest_results$`General pluripotency`[[1]], ttest_results$`Post-implantation epiblast`[[1]], ttest_results$`Lineage markers`[[1]], ttest_results$`Bivalent promoters`[[1]]),
+  df              = c(ttest_results$`Naive pluripotency`[[2]], ttest_results$`General pluripotency`[[2]], ttest_results$`Post-implantation epiblast`[[2]], ttest_results$`Lineage markers`[[2]], ttest_results$`Bivalent promoters`[[2]]),
+  p               = c(ttest_results$`Naive pluripotency`[[3]], ttest_results$`General pluripotency`[[3]], ttest_results$`Post-implantation epiblast`[[3]], ttest_results$`Lineage markers`[[3]], ttest_results$`Bivalent promoters`[[3]])
+) %>% mutate(p.signif = case_when(
+  p < 0.05 & p > 0.01 ~ "*",
+  p < 0.01 & p > 0.001 ~ "**",
+  p < 0.001 ~ "***",
+  TRUE ~ "ns"))
+
+# Plot of the CpG density distribution for each gene category
+counts_vs_density_by_pluripotency_plot1 <- 
+  counts_vs_density_by_pluripotency_data %>% 
+  select(gene_id, selected_genes, OE_ratio) %>% 
+  unique %>%
+  ggplot(aes(selected_genes, OE_ratio, fill = selected_genes)) + 
+  geom_boxplot(show.legend = F) + 
+  geom_text(data = ttest_df, mapping = aes(y = 1, label = p.signif), size = 5) +
+  scale_fill_manual(values = c(colorblind_pal()(8)[c(3,8,4,2,7)], "gray") %>% set_names(c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters", "All protein-coding genes"))) +   
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
+  labs(y = "O/E CpG density ratio in promoters", x = "")
+
+# Plot of the RNA-seq distribution for each gene category
+counts_vs_density_by_pluripotency_plot2 <- 
+  counts_vs_density_by_pluripotency_data %>% 
+  select(gene_id, selected_genes, `RNA-Seq`, group) %>% 
+  unique %>% 
+  ggplot(aes(group, `RNA-Seq`, fill = selected_genes)) + 
+  geom_boxplot(show.legend = F, position = position_dodge2(width = 0.8)) + 
+  scale_fill_manual(values = c(colorblind_pal()(8)[c(3,8,4,2,7)], "gray") %>% set_names(c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters", "All protein-coding genes"))) +   
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
+  labs(y = "Log2(normalized counts + 1)", x = "") +
+  facet_grid(~ selected_genes, scales = "free")
+
+# Plot of the H3K27me3 and H3K4me3 distribution for each gene category
+counts_vs_density_by_pluripotency_plot3 <- 
+  counts_vs_density_by_pluripotency_data %>% 
+  select(gene_id, selected_genes, seqtype, value, group) %>% 
+  unique %>% 
+  ggplot(aes(group, value, fill = selected_genes)) + 
+  geom_boxplot(show.legend = F, position = position_dodge2(width = 0.8)) + 
+  scale_fill_manual(values = c(colorblind_pal()(8)[c(3,8,4,2,7)], "gray") %>% set_names(c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers", "Bivalent promoters", "All protein-coding genes"))) + 
+  theme_publication() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
+  labs(y = "Log2(normalized counts + 1)", x = "") +
+  facet_grid(seqtype ~ selected_genes, scales = "free")
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_1.svg", width = 2.5, height = 7.5)
+global_rsq_plot
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_2.svg", width = 9, height = 6)
+regression_estimate_plot + relative_importance_data_plot_lmg
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_3.svg", width = 9, height = 6)
+relative_importance_data_plot_first + relative_importance_data_plot_last
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_4.svg", width = 5, height = 3)
+OE_ratio_plot
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_5.svg", width = 3.5, height = 4.5)
+counts_vs_density_by_pluripotency_plot1
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_6.svg", width = 12, height = 3.25)
+counts_vs_density_by_pluripotency_plot2
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_7.svg", width = 12, height = 4.75)
+counts_vs_density_by_pluripotency_plot3
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_8.svg", width = 14, height = 8)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_8.pdf", width = 14, height = 8)
+barplot(enrichGO_results$`Promoter (low CpG density)`) +
+barplot(enrichGO_results$`Promoter (medium CpG density)`) +
+barplot(enrichGO_results$`Promoter (high CpG density)`) +
+barplot(enrichGO_results$`Bivalent promoters`)
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_9.svg", width = 15, height = 9)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_9.pdf", width = 15, height = 9)
+barplot(enrichKEGG_results$`Promoter (low CpG density)`) +
+barplot(enrichKEGG_results$`Promoter (medium CpG density)`) +
+barplot(enrichKEGG_results$`Promoter (high CpG density)`) +
+barplot(enrichKEGG_results$`Bivalent promoters`)
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

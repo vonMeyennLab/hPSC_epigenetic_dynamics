@@ -1,0 +1,339 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "MOFA2 model"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# PBAT read counts
+```{r}
+
+# Loading ChIP-seq, ATAC-seq, and PBAT read counts
+load(file = "output/database/counts_in_windows_200CpGs.RData")
+
+# Define probes index
+probes_index <- rownames(chipseq_atacseq_normalized_counts$`ATAC-Seq`)
+
+# Add probe index to row names
+rownames(PBAT_meth_ratio) <- probes_index
+
+# Correcting the sample names
+colnames(PBAT_meth_ratio) <- str_replace_all(colnames(PBAT_meth_ratio), "\\.", "\\-")
+
+# Correcting the sample replicate numbers
+colnames(PBAT_meth_ratio) <- colnames(PBAT_meth_ratio) %>% str_remove("_rep\\d+") %>% ave(., ., FUN = function(i) paste0(i, '_rep', seq_along(i)))
+
+# Excluding X and Y chromosomes
+PBAT_meth_ratio <- PBAT_meth_ratio %>% .[!str_detect(rownames(.), "X:|Y:"), ] # filter out X and Y chromosomes
+  
+# Select most variable probes
+rv <- rowVars(PBAT_meth_ratio)
+
+# Define threshold    
+rv %>% na.omit %>% tibble(rank = rank(-.), value = .) %>% filter(value > 0.05) %>% nrow
+rv %>% na.omit %>% tibble(rank = rank(-.), value = .) %>% ggplot(aes(rank, value)) + geom_vline(xintercept = 26540) + geom_hline(yintercept = 0.05) + geom_line() + theme_publication()
+
+select <- order(rv, decreasing = TRUE)[seq_len(min(26540, length(rv)))]
+
+PBAT_meth_ratio <- PBAT_meth_ratio[select,]
+
+```
+
+# Loading diffbind peaks
+```{r}
+
+load(file = "output/database/differential_peaks_dba_analyze.RData")
+
+```
+
+# Loading diffbind peaks
+```{r}
+
+dba_analyze_norm_counts <- 
+map(dba_analyze, function(x){
+  
+   dba_analyze_consensus_peaks <-
+    x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$binding %>% 
+    as.data.frame() %>% 
+    left_join(tibble(CHR = 1:length(x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$chrmap), CHR_new = x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$chrmap)) %>% 
+    select(-CHR) %>% 
+    dplyr::rename(CHR = CHR_new) %>% 
+    select(CHR, everything()) %>% 
+    filter(CHR %in% c(1:22)) %>% 
+    mutate(position = paste(CHR,START,END, sep = ":"))
+  
+  deseq_position <- 
+    map(x,
+    ~ dba.report(.x) %>% 
+      as.data.frame() %>% 
+      mutate(position = paste(seqnames,start,end, sep = ":")) %>%
+      filter(seqnames %in% c(1:22)) %>%
+      filter(FDR < 0.05) %>%
+      filter(abs(Fold) > 2) %>%
+      pull(position) %>% 
+      unique
+    ) %>% 
+    purrr::reduce(c) %>%
+    unique
+  
+  dba_analyze_norm_counts <- 
+    dba_analyze_consensus_peaks %>%
+    filter(position %in% deseq_position) %>%
+    select(-CHR, -START, -END) %>%
+    .[, c(RNAseq_metadata[RNAseq_metadata$group %in% c("HNES1 d0", "cR-H9-EOS d0", "HNES1 d10", "cR-H9-EOS d10","cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS"), "sample_id", drop = T] %>% .[str_detect(., "rep3", negate = T)], "position")] %>%
+    as_tibble %>%
+    column_to_rownames("position") %>%
+    as.matrix()
+
+  return(dba_analyze_norm_counts)
+})
+
+# Log transform diffbind region counts
+dba_analyze_norm_counts <- map(dba_analyze_norm_counts, ~ log2(.x + 1))
+
+```
+
+# Modeling
+```{r}
+
+# a vector of the sample_ids so that the datasets have the columns in the same order
+colnames_order <- chipseq_atacseq_normalized_counts$`ATAC-Seq` %>% colnames %>% .[!str_detect(., "d3")]
+
+# Creating the MOFA object
+MOFAobject <- create_mofa(
+                          list(
+                            "ATAC-seq"    = dba_analyze_norm_counts$`ATAC-Seq`[, colnames_order] %>% as.matrix(),
+                            "H3K4me3"     = dba_analyze_norm_counts$H3K4me3[, colnames_order] %>% as.matrix(),
+                            "H3K4me1"     = dba_analyze_norm_counts$H3K4me1[, colnames_order] %>% as.matrix(),
+                            "H3K27ac"     = dba_analyze_norm_counts$H3K27ac[, colnames_order] %>% as.matrix(),
+                            "H3K27me3"    = dba_analyze_norm_counts$H3K27me3[, colnames_order] %>% as.matrix(),
+                            "H3K9me3"     = dba_analyze_norm_counts$H3K9me3[, colnames_order] %>% as.matrix()
+                          )
+                        )
+
+# data options
+data_opts <- get_default_data_options(MOFAobject)
+data_opts$scale_views <- TRUE
+
+# model options
+model_opts <- get_default_model_options(MOFAobject)
+model_opts$num_factors <- 3
+
+# training options
+train_opts <- get_default_training_options(MOFAobject)
+train_opts$maxiter <- 2000
+train_opts$convergence_mode <- "slow"
+
+# building the MOFA object with the options
+MOFAobject <- prepare_mofa(
+  object           = MOFAobject,
+  data_options     = data_opts,
+  model_options    = model_opts,
+  training_options = train_opts
+)
+
+outfile <- "tmp/MOFA2_peaks_without_methylation.hdf5"
+#reticulate::py_install("mofapy2", envname = "r-reticulate", method = "conda", conda = "/scratch/josousa/miniconda3/condabin/conda", pip = TRUE)
+#reticulate::use_condaenv(condaenv = "/scratch/josousa/miniconda3/envs/r-reticulate", required = TRUE)
+MOFAobject.trained <- MOFA2::run_mofa(object = MOFAobject, outfile = outfile, use_basilisk = F)
+
+```
+
+# Model analysis
+```{r}
+
+# loading the model
+model <- load_model("tmp/MOFA2_peaks_without_methylation.hdf5")
+
+# overview of the model
+plot_data_overview(model)
+
+# adding metadata to the model
+samples_metadata(model) <-
+                          left_join(
+                          model@samples_metadata %>% unique,
+                          RNAseq_metadata %>% .[, c("sample_id", "cell", "day", "color", "group")] %>% dplyr::rename(sample_group = group) %>% unique, by = c("sample" = "sample_id")
+                          )
+
+# correlation between the factors
+plot_factor_cor(model)
+
+```
+
+# Variance explained
+```{r}
+
+# variance explained for each factor
+variance_explained <- get_variance_explained(model, as.data.frame = T)
+
+ht_variance_explained <- 
+variance_explained$r2_per_factor %>%
+  mutate(view = factor(view, levels = c(
+                                        "RNA-seq",
+                                        "ATAC-seq",
+                                        "H3K4me3",
+                                        "H3K27ac",
+                                        "H3K4me1",
+                                        "H3K27me3",
+                                        "H3K9me3",
+                                        "Methylation"
+    ))) %>%
+  mutate(factor = str_replace(factor, "Factor", "Factor ")) %>% 
+  ggplot(aes(fct_rev(view), factor, fill = value, label = round(value, 2))) +
+  geom_tile(color = "black", lwd = 0.3) +
+  geom_text(size = 3.5) +
+  scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(6, "RdBu"))) +
+  guides(fill = guide_colorbar(expression(R^{2}~"(%)"), frame.colour = "black", ticks.colour = "black")) +
+  labs(x = "", y = "", title = "") +
+  theme(axis.title.x     = element_blank(), 
+        axis.text.x      = element_text(size = 11, color = "black", face = "bold"),
+        axis.text.y      = element_text(size = 11, color = "black"), 
+        axis.title.y     = element_text(size = 14),
+        axis.line        = element_blank(), 
+        axis.ticks       = element_blank(),
+        panel.background = element_blank(), 
+        strip.background = element_blank(),
+        strip.text       = element_text(size = 12)) +
+  scale_y_discrete(position = "right") +
+  coord_flip()
+
+
+ht_variance_explained_total <- 
+variance_explained$r2_total %>%
+  mutate(view = factor(view, levels = c(
+                                          "RNA-seq",
+                                          "ATAC-seq",
+                                          "H3K4me3",
+                                          "H3K27ac",
+                                          "H3K4me1",
+                                          "H3K27me3",
+                                          "H3K9me3",
+                                          "Methylation"
+    ))) %>%
+  ggplot(aes(fct_rev(view), value)) +
+  geom_col(color = "black", fill = brewer.pal(n = 9, name = "Blues")[6], show.legend = F) +
+  coord_flip() +
+  theme_publication() +
+  theme(axis.title.x = element_text(margin = margin(t = 0))) +
+  labs(title = "Total variance explained", y = expression(R^{2}~"(%)"), x = "")
+
+```
+
+# Factors
+```{r}
+
+# plotting the factors
+factors <-
+  get_factors(model, groups = "all", factors = "all", as.data.frame = T) %>%
+  mutate(factor = factor(factor, levels = paste0("Factor", 1:10))) %>%
+  left_join(RNAseq_metadata %>% .[, c("sample_id", "color")] %>% unique, by = c("sample" = "sample_id")) %>%
+  mutate(factor = str_replace(factor, "Factor", "Factor "))
+
+ht_factors <- 
+ggplot(data = factors, mapping = aes(NA, value, fill = color)) +
+  geom_hline(yintercept = 0, color = "gray70", linetype = 2) +
+  geom_jitter(shape = 21, height = 0, width = 0.4, show.legend = F, size = 4, color = "black", ) +
+  scale_fill_identity(aes(color)) +
+  theme_publication() +
+  theme(axis.text.x      = element_blank(),
+        axis.ticks.x     = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  facet_grid(. ~ factor) +
+  labs(x = "", y = "Factor value")
+
+```
+
+# Plotting TSNE and UMAP
+```{r}
+
+# TSNE
+set.seed(321)
+tsne_data <- run_tsne(model, perplexity = 4)
+
+tsne_plot_data <-
+plot_dimred(object      = tsne_data,
+            method      = "TSNE",
+            color_by    = "sample",
+            legend      = T,
+            dot_size    = 5,
+            return_data = T
+)
+
+tsne_plot <- 
+tsne_plot_data %>%
+  left_join(RNAseq_metadata %>% .[, c("sample_id", "color")] %>% unique, by = c("sample" = "sample_id")) %>%
+  ggplot(aes(x, y, fill = color, label = color_by)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  scale_fill_identity(aes(color)) +
+  theme_publication() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(x = "tSNE1", y = "tSNE2")
+
+
+# UMAP plots
+set.seed(123)
+umap_data <- run_umap(model, n_neighbors = 9)
+
+umap_plot_data <-
+plot_dimred(object      = umap_data,
+            method      = "UMAP",
+            color_by    = c("sample"),
+            legend      = T,
+            dot_size    = 5,
+            return_data = T
+)
+
+umap_plot <- 
+  umap_plot_data %>%
+  left_join(RNAseq_metadata %>% .[, c("sample_id", "color")] %>% unique, by = c("sample" = "sample_id")) %>%
+  ggplot(aes(x, y, fill = color, label = color_by)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  scale_fill_identity(aes(color)) +
+  theme_publication() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_1.svg", width = 3.25, height = 3)
+#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_1.pdf"    , width = 3.25, height = 3)
+tsne_plot
+dev.off()
+
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_2.svg", width = 9, height = 5)
+#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_2.pdf"    , width = 9, height = 5)
+ht_factors + ht_variance_explained
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

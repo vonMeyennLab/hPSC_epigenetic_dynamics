@@ -1,0 +1,240 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "MOFA2 model"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# ChIP-Seq and ATAC-Seq repeat read counts
+```{r}
+
+load(file = "output/database/chipseq_atacseq_counts_in_repeats.RData")
+
+# Adding repeats family as rownames
+repeats_repFamily <- genome_annotation$Repeats %>% as.data.frame() %>% pull(repFamily)
+repeats_position <- genome_annotation$Repeats %>% as.data.frame() %>% tidyr::unite("position", seqnames:end, sep = ":") %>% pull(position)
+
+chipseq_atacseq_repeat_counts <- 
+map(chipseq_atacseq_normalized_counts, function(x){
+  
+  x <- x %>% `+`(1) %>% log2 %>% as.data.frame() %>% mutate(repFamily = repeats_repFamily) %>% mutate(position = repeats_position) %>% .[!str_detect(.$position, "X:|Y:"), ] %>% filter(!str_detect(repFamily, "\\?"))
+  
+  return(x)
+})
+
+```
+
+# PBAT repeat read counts
+```{r}
+
+# Loading ChIP-seq, ATAC-seq, and PBAT read counts
+load(file = "output/database/meth_ratio_in_annotated_regions.RData")
+
+PBAT_meth_ratio <- 
+  meth_ratio_in_annotated_regions$Repeats %>%
+  as.data.frame() %>% 
+  mutate(repFamily = repeats_repFamily) %>%
+  filter(seqnames %in% 1:22) %>% 
+  filter(!str_detect(repFamily, "\\?"))
+
+```
+
+# Creating dataframe with methylation data for heatmap
+```{r}
+
+PBAT_ht_data <-
+  PBAT_meth_ratio %>%
+  select(-seqnames, -start, -end, -strand) %>% 
+  gather(sample_id, value, -repFamily) %>% 
+  mutate(sample_id = str_replace_all(sample_id, "\\.", "-")) %>% 
+  left_join(RNAseq_metadata[, c("sample_id", "day")] %>% unique) %>% 
+  filter(!str_detect(day, "3")) %>% 
+  group_by(day, repFamily) %>% 
+  mutate(day = str_replace(day, "H9-EOS", "H9 Primed")) %>%
+  summarise(value = mean(value, na.rm = T)) %>% 
+  ungroup %>% 
+  spread(day, value) %>%
+  na.omit %>% 
+  column_to_rownames("repFamily") %>%
+  as.matrix()
+
+```
+
+# Creating dataframe with ChIP-seq and ATAC-seq data for heatmap
+```{r}
+
+chipseq_atacseq_ht_data <- 
+map(chipseq_atacseq_repeat_counts,
+  ~ .x %>% 
+  as.data.frame() %>%
+  select(-position) %>% 
+  gather(sample_id, value, -repFamily) %>% 
+  mutate(sample_id = str_replace_all(sample_id, "\\.", "-")) %>% 
+  left_join(RNAseq_metadata[, c("sample_id", "day")] %>% unique) %>% 
+  filter(!str_detect(day, "3")) %>% 
+  group_by(day, repFamily) %>% 
+  mutate(day = str_replace(day, "H9-EOS", "H9 Primed")) %>%
+  summarise(value = mean(value, na.rm = T)) %>% 
+  ungroup %>% 
+  spread(day, value) %>%
+  na.omit %>% 
+  column_to_rownames("repFamily") %>%
+  as.matrix()
+)
+
+```
+
+# Counts heatmap
+```{r}
+
+col_fun <- circlize::colorRamp2(c(0, 0.5,3,5,7), colors = c("darkblue", "blue", "white", "red", "darkred"))
+col_fun_meth <- circlize::colorRamp2(c(0, 0.5,0.70,0.9,1), colors = c("darkblue","royalblue3", "white", "red", "darkred"))
+
+methylation_ht <- 
+ComplexHeatmap::Heatmap(matrix           = PBAT_ht_data[,c("0", "10", "20X", "20E", "H9 Primed")],
+                        name             = "Methylation",
+                        column_title     = "Methylation",
+                        col              = col_fun_meth,
+                        cluster_columns  = F,
+                        row_names_gp     = grid::gpar(fontsize = 9),
+                        column_names_gp  = grid::gpar(fontsize = 9),
+                        border           = "black", 
+                        column_names_rot = 45)
+
+chipseq_atacseq_ht <- 
+map2(chipseq_atacseq_ht_data, names(chipseq_atacseq_ht_data),
+ ~ ComplexHeatmap::Heatmap(matrix           = .x %>% .[rownames(.) %in% rownames(PBAT_ht_data),c("0", "10", "20X", "20E", "H9 Primed")],
+                           name             = .y,
+                           column_title     = .y,
+                           col              = col_fun,
+                           cluster_columns  = F,
+                           row_names_gp     = grid::gpar(fontsize = 9),
+                           column_names_gp  = grid::gpar(fontsize = 9),
+                           border           = "black", 
+                           column_names_rot = 45)
+)
+
+ht_counts <- 
+  chipseq_atacseq_ht$`ATAC-Seq` + 
+  chipseq_atacseq_ht$H3K4me3 + 
+  chipseq_atacseq_ht$H3K27ac + 
+  chipseq_atacseq_ht$H3K4me1 + 
+  chipseq_atacseq_ht$H3K27me3 + 
+  chipseq_atacseq_ht$H3K9me3 + 
+  methylation_ht
+
+```
+
+# Peaks overlap
+```{r}
+
+load(file = "output/database/chipseq_atacseq_peaks.RData")
+
+macs_peaks_gr <- 
+  macs_peaks_gr %>%
+ .[seqnames(.) %in% 1:22] %>% 
+ .[!.$day == 3] %>% 
+ as.data.frame() %>%
+ named_group_split(seqtype) %>% 
+ map(~ named_group_split(.x, day) %>% map(~ makeGRangesFromDataFrame(.x)))
+
+peaks_overlap <- 
+map(macs_peaks_gr,
+function(x){
+map2(x, names(x),
+~ subsetByOverlaps(genome_annotation$Repeats, .x) %>%
+  as.data.frame() %>%
+  filter(!str_detect(repFamily, "\\?")) %>% 
+  group_by(repFamily) %>% 
+  summarise(!!.y := n()) %>% 
+  ungroup) %>% 
+  purrr::reduce(inner_join) %>% 
+  left_join(genome_annotation$Repeats %>% 
+              as.data.frame() %>% 
+              group_by(repFamily) %>% 
+              summarise(total = n())
+            )
+})
+
+chipseq_atacseq_overlap_ht_data <- 
+  map(peaks_overlap,
+  ~ .x %>% 
+  mutate_at(.vars = vars(c(-"repFamily", -total)), .funs = ~ .x / total) %>%
+  select(-total) %>% 
+  gather(day, pct, -repFamily) %>%
+  mutate(day = str_replace(day, "H9-EOS", "H9 Primed")) %>% 
+  spread(day, pct) %>% 
+  column_to_rownames("repFamily") %>% 
+  as.matrix() %>% 
+  .[,c("0", "10", "20X", "20E", "H9 Primed")])
+
+repeat_subset <- map(chipseq_atacseq_overlap_ht_data, ~ rownames_to_column(.x %>% as.data.frame()) %>% select(rowname)) %>% purrr::reduce(inner_join) %>% pull(rowname)
+
+col_fun_pct <- circlize::colorRamp2(c(0,0.025,0.05, 0.15,0.3), colors = c("darkblue","royalblue3", "white", "red", "darkred"))
+
+chipseq_atacseq_overlap_ht <- 
+map2(chipseq_atacseq_overlap_ht_data, names(chipseq_atacseq_overlap_ht_data),
+~ ComplexHeatmap::Heatmap(matrix           = .x[repeat_subset,],
+                          name             = .y,
+                          column_title     = .y,
+                          col              = col_fun_pct,
+                          cluster_columns  = F,
+                          row_names_gp     = grid::gpar(fontsize = 9),
+                          column_names_gp  = grid::gpar(fontsize = 9),
+                          border           = "black",
+                          column_names_rot = 45))
+
+methylation_ht <- 
+ComplexHeatmap::Heatmap(matrix           = PBAT_ht_data[repeat_subset,c("0", "10", "20X", "20E", "H9 Primed")],
+                        name             = "Methylation",
+                        column_title     = "Methylation",
+                        col              = col_fun_meth,
+                        cluster_columns  = F,
+                        row_names_gp     = grid::gpar(fontsize = 9),
+                        column_names_gp  = grid::gpar(fontsize = 9),
+                        border           = "black", 
+                        column_names_rot = 45)
+
+overlap_ht <- 
+  chipseq_atacseq_overlap_ht$`ATAC-Seq` + 
+  chipseq_atacseq_overlap_ht$H3K4me3 + 
+  chipseq_atacseq_overlap_ht$H3K27ac + 
+  chipseq_atacseq_overlap_ht$H3K4me1 + 
+  chipseq_atacseq_overlap_ht$H3K27me3 + 
+  chipseq_atacseq_overlap_ht$H3K9me3 +
+  methylation_ht
+
+```
+
+# Saving Plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/peaks_repeats_overlap.svg", width = 10, height = 5.5)
+draw(overlap_ht)
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

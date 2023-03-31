@@ -1,0 +1,219 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Differential Gene Expression (DGE)"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading RNA-Seq counts and filtering
+```{r}
+
+tximport <- tximport(files   = RNAseq_metadata %>% 
+                               .$file %>% 
+                               setNames(RNAseq_metadata %>% .$sample_id),
+                     type    = "salmon",
+                     tx2gene = txdf[,2:1])
+  
+dds <- 
+  DESeqDataSetFromTximport(txi     = tximport,
+                           colData = RNAseq_metadata,
+                           design  = as.formula("~ day"))
+  
+# Generating transformed counts (for visualization and clustering only !!)  
+transformed_counts <- vst(dds, blind = TRUE)
+
+# Generate normalized counts
+normalized_counts <- DESeq2::estimateSizeFactors(dds) %>% DESeq2::counts(normalized = TRUE)
+
+```
+
+# Load DGE results
+```{r}
+
+load("output/database/deseq2_results.RData")
+
+```
+
+# Mfuzz analysis
+```{r}
+
+# Selecting only genes in autosomes
+gene_id_autosomes <- edb_gene_attributes %>% filter(seqnames %in% 1:22) %>% pull(gene_id) %>% unique
+
+# Selecting the deseq2 gene_ids
+deseq_gene_id <- 
+map(deseq2_analysis,
+~ .x %>% .[is.finite(.$padj), ] %>% .[.$padj < 0.05, ] %>% .[abs(.$log2FoldChange) > 2, ] %>% rownames %>% unique
+) %>% purrr::reduce(c) %>% unique
+
+normalized_counts_by_day <- 
+  normalized_counts %>%
+  as.data.frame() %>% 
+  .[gene_id_autosomes,] %>% 
+  rownames_to_column("gene_id") %>%
+  gather(sample_id, counts, -gene_id) %>%
+  left_join(unique(RNAseq_metadata[, c("sample_id", "day", "group")])) %>%
+  group_by(gene_id, day) %>%
+  summarise(counts = mean(counts)) %>%
+  ungroup %>% 
+  spread(day, counts) %>% 
+  column_to_rownames("gene_id") %>% 
+  as.matrix()
+
+# Normalized counts of the deseq genes
+norm_counts_deseq <- normalized_counts_by_day %>% .[rownames(.) %in% deseq_gene_id,]
+
+# Transforms the expression dataframe into a ExpressionSet object and standardises it
+expdata_standardised <- new("ExpressionSet", exprs = as.matrix(norm_counts_deseq)) %>%
+                        filter.NA(thres = 0.25) %>%
+                        fill.NA(mode = "knn") %>%
+                        filter.std(min.std = 0) %>%
+                        standardise()
+
+# This function estimates an optimal setting of fuzzifier m
+optimal_fuzzifier_m <- mestimate(expdata_standardised)
+
+# Choosing the number of clusters:
+# ---------------------------------------------------------#
+# helper function for the within sum of squared error
+sumsqr <- function(x, clusters){
+  sumsqr <- function(x) sum(scale(x, scale = FALSE)^2)
+  wss <- sapply(split(as.data.frame(x), clusters), sumsqr)
+  return(wss)
+}
+# get the wss for repeated clustering
+iterate_fcm_WSS <- function(df,m){
+  totss <- numeric()
+  for (i in 2:20){
+    FCMresults <- cmeans(df,centers=i,m=m)
+    totss[i] <- sum(sumsqr(df,FCMresults$cluster))
+  }
+  return(totss)
+}
+wss_2to20 <- iterate_fcm_WSS(exprs(expdata_standardised), optimal_fuzzifier_m)
+plot(1:20, wss_2to20[1:20], type = "b", xlab = "Number of Clusters", ylab = "Within Group Sum of Squares", xaxt='n')
+axis(side=1, at=seq(2, 20, by = 1))
+abline(v = 6, lty = 2, lwd = 1, col = "red")
+WSS_plot <- recordPlot()
+dev.off()
+# ---------------------------------------------------------#
+# ---------------------------------------------------------#
+  
+# Soft clustering of genes based on their expression values using the fuzzy c-means algorithm
+set.seed(123);clusters_object <- mfuzz(expdata_standardised, c = 5, m = optimal_fuzzifier_m)
+
+# Visualises the cluster overlap produced by overlap
+overlap.plot(clusters_object,
+             over = overlap(clusters_object),
+             thres = 0.05)
+
+overlap_plot <- recordPlot()
+dev.off()
+
+# extracts membership values
+acore <- acore(expdata_standardised, clusters_object, min.acore = 0.8)
+acore_list <- do.call(rbind, lapply(seq_along(acore), function(i){ data.frame(CLUSTER=i, acore[[i]])}))
+
+# RNAseq log2 normalized counts in each mfuzz cluster
+mfuzz_clusters <-
+ norm_counts_deseq %>%
+ as.data.frame()  %>% 
+ rownames_to_column("gene_id") %>%
+ right_join(acore_list, by = c("gene_id" = "NAME")) %>%
+ gather(day, value, -gene_id, -CLUSTER, -MEM.SHIP) %>% 
+ left_join(unique(RNAseq_metadata[, c("day", "sample_id", "group", "color")])) %>%
+ mutate(value = log2(value + 1)) %>% 
+ group_by(gene_id, day, CLUSTER) %>% 
+ summarize(value = mean(value)) %>% 
+ ungroup %>%
+ mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+ spread(day, value) %>%
+ mutate(CLUSTER = case_when(CLUSTER == 5 ~ 1,
+                            CLUSTER == 1 ~ 2,
+                            CLUSTER == 2 ~ 3,
+                            CLUSTER == 4 ~ 4,
+                            CLUSTER == 3 ~ 5,
+                            TRUE ~ 0)) %>%
+ mutate(CLUSTER = factor(CLUSTER, levels = 1:5)) %>%
+ arrange(CLUSTER)
+
+# Gene ontology
+enrichGO_clusters <-
+map(mfuzz_clusters %>% named_group_split(CLUSTER) %>% map(~ pull(.x, gene_id) %>% unique),  
+function(x){
+  
+  enrichGO_results <-
+  enrichGO(gene        = x,
+         universe      = rownames(tximport$counts) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.01,
+         readable      = TRUE
+         )
+  
+  try(clusterProfiler::simplify(enrichGO_results, cutoff = 0.7, by = "p.adjust", select_fun = min))
+
+  }
+)
+
+
+# KEGG pathways
+enrichKEGG_clusters <-
+map(mfuzz_clusters %>% named_group_split(CLUSTER) %>% map(~ pull(.x, gene_id) %>% unique),  
+    function(x){
+      
+gene_entrez <- mapIds(x         = org.Hs.eg.db,
+                      keys      = x,
+                      column    = "ENTREZID",
+                      keytype   = "ENSEMBL",
+                      multiVals = "first")
+
+universe_entrez <- mapIds(x        = org.Hs.eg.db,
+                         keys      = rownames(tximport$counts) %>% unique,
+                         column    = "ENTREZID",
+                         keytype   = "ENSEMBL",
+                         multiVals = "first")
+
+kegg_results <-
+enrichKEGG(gene          = gene_entrez,
+           organism      = "hsa",
+           keyType       = "kegg",
+           pvalueCutoff  = 0.01,
+           pAdjustMethod = "BH",
+           universe      = universe_entrez,
+           qvalueCutoff  = 0.01) %>% 
+  setReadable(OrgDb = org.Hs.eg.db, keyType = "ENTREZID")
+
+return(kegg_results)
+})
+
+# Saving results
+save(mfuzz_clusters, enrichGO_clusters, enrichKEGG_clusters, file = "output/database/rnaseq_DGE_clusters.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

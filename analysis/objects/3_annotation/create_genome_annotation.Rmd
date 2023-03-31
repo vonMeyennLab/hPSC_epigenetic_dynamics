@@ -1,0 +1,287 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Create genome annotation"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 11, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Annotation from Barakat et al. (2018)
+```{r}
+
+# https://doi.org/10.1016/j.stem.2018.06.014
+
+# Liftover chain from hg19 to hg38
+hg19ToHg38_chain <- import.chain("analysis/objects/3_annotation/liftover/hg19ToHg38.over.chain")
+
+naive_enhancers <- 
+rtracklayer::import("analysis/objects/3_annotation/Barakat_2018/enhancers_naive.bed") %>% 
+  liftOver(hg19ToHg38_chain) %>% 
+  unlist()
+
+naive_super_enhancers <- 
+rtracklayer::import("analysis/objects/3_annotation/Barakat_2018/superenhancers_naive.bed") %>% 
+  liftOver(hg19ToHg38_chain) %>% 
+  unlist()
+
+primed_enhancers <- 
+rtracklayer::import("analysis/objects/3_annotation/Barakat_2018/enhancers_primed.bed") %>% 
+  liftOver(hg19ToHg38_chain) %>% 
+  unlist()
+
+primed_super_enhancers <- 
+rtracklayer::import("analysis/objects/3_annotation/Barakat_2018/superenhancers_primed.bed") %>% 
+  liftOver(hg19ToHg38_chain) %>% 
+  unlist()
+
+# Sub-setting enhancers based on the activity threshold
+naive_enhancers  <- naive_enhancers[naive_enhancers$itemRgb == "#3690C0"]
+primed_enhancers <- primed_enhancers[primed_enhancers$itemRgb == "#3690C0"]
+
+```
+
+# Imprinted regions
+```{r}
+
+human_imprints <- read.delim(file = "analysis/objects/3_annotation/human_imprints/HumanImprintsGRCh38.txt", sep = "\t") %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+
+```
+
+# annotatr annotations
+```{r}
+
+annotatr_set_names <- 
+  builtin_annotations() %>% .[str_detect(., "hg38")] %>% dput
+
+# c(
+#   "hg38_genes_1to5kb",
+#   "hg38_genes_promoters",
+#   "hg38_genes_cds", 
+#   "hg38_genes_5UTRs", 
+#   "hg38_genes_exons", 
+#   "hg38_genes_firstexons", 
+#   "hg38_genes_introns",
+#   "hg38_genes_intronexonboundaries",
+#   "hg38_genes_exonintronboundaries", 
+#   "hg38_genes_3UTRs",
+#   "hg38_genes_intergenic",
+#   "hg38_cpg_islands", 
+#   "hg38_cpg_shores",
+#   "hg38_cpg_shelves", 
+#   "hg38_cpg_inter", 
+#   "hg38_enhancers_fantom", 
+#   "hg38_lncrna_gencode",
+#   "hg38_basicgenes", 
+#   "hg38_cpgs"
+#   )
+
+annotatr_set <- 
+map(annotatr_set_names[!annotatr_set_names %in% c("hg38_lncrna_gencode")] %>% set_names(., .), ~ annotatr::build_annotations("hg38",  annotations = .x)) # excluded hg38_lncrna_gencode because it was returning an error!
+
+```
+
+# Ensembl gene and transcript annotations
+```{r}
+
+# Ensembl genes
+genes <- GenomicFeatures::genes(edb)
+
+# lncRNAs
+lncRNAs <- GenomicFeatures::genes(edb, filter = ~ gene_biotype == "lncRNA")
+
+# CDS
+cds <- GenomicFeatures::cds(txdb)
+
+# Introns
+introns <- ensembldb::intronsByTranscript(txdb, use.names = T) %>% unlist()
+
+# Exons
+exons <- GenomicFeatures::exons(txdb)
+
+# Intergenic regions
+intergenic_regions <- GRanges(seqnames = seqnames(GenomicFeatures::genes(edb)),
+                              ranges   = ranges(GenomicFeatures::genes(edb))) %>% sort() %>% gaps() %>% .[strand(.) == "*"]
+
+# 3' UTRs
+threeUTRs <- ensembldb::threeUTRsByTranscript(txdb, use.names = T) %>% unlist()
+
+# 5' UTRs
+fiveUTRs <- ensembldb::fiveUTRsByTranscript(txdb, use.names = T) %>% unlist()
+
+# TES
+TES <- GenomicFeatures::genes(edb) %>% GeneNeighborhood::getTES()
+
+# TSS
+TSS <- GenomicFeatures::genes(edb) %>% resize(width = 1, fix = 'start')
+
+# TSS +-1Kb
+TSS_plus_minus_1Kb <- promoters(TSS, upstream = 1000, downstream = 1000, use.names = T) %>% trim()
+
+# TSS +-500b
+TSS_plus_minus_500b <- promoters(TSS, upstream = 500, downstream = 500, use.names = T) %>% trim()
+
+####################################################################
+# Ensembl promoters (+-2Kb from TSS)
+
+# Promoters
+promoters <- promoters(TSS, upstream = 2000, downstream = 2000, use.names = T) %>% trim()
+
+# Convert ensembl chromosomes names into UCSC
+seqlevelsStyle(promoters) <- "UCSC"
+promoters                 <- promoters[seqnames(promoters) %in% seqnames(BSgenome.Hsapiens.UCSC.hg38)]
+seqlevels(promoters)      <- seqnames(BSgenome.Hsapiens.UCSC.hg38)
+
+# Promoters overlapping with CGI
+elementMetadata(promoters)[promoters$gene_id %in% (subsetByOverlaps(promoters, annotatr_set$hg38_cpg_islands) %>% .$gene_id %>% unique), "CGI"] <- TRUE
+elementMetadata(promoters)[, "CGI"] <- replace_na(elementMetadata(promoters)[, "CGI"], replace = FALSE)
+
+# Relevel the promoter chromosomes
+seqlevels(promoters) <- seqnames(promoters) %>% as.vector() %>% unique
+seqlevelsStyle(promoters) <- "Ensembl"
+####################################################################
+
+```
+
+# Making a GRanges objects with only ZNF genes
+```{r}
+
+edb_gene_attributes <- genes(edb, columns = c("gene_id", "gene_name", "gene_biotype")) %>% as.data.frame()
+
+ZNF_genes <- edb_gene_attributes %>%
+             filter(grepl("ZNF", gene_name)) %>%
+             makeGRangesFromDataFrame(keep.extra.columns = T)
+
+```
+
+# UCSC annotation tracks
+```{r}
+
+# Repeats annotation track
+repeats <- 
+  read_tsv(file = list.files(path        = "analysis/objects/3_annotation/UCSC", 
+                             pattern     = "rmsk_hg38.txt", 
+                             ignore.case = T, 
+                             full.names  = T)) %>% 
+  select(-c("#bin")) %>% 
+  makeGRangesFromDataFrame(seqnames.field     = "genoName", 
+                           start.field        = "genoStart", 
+                           end.field          = "genoEnd", 
+                           strand.field       = "strand", 
+                           keep.extra.columns = T)
+
+# Centromeres annotation track
+centromeres <- 
+  read_tsv(file = list.files(path        = "analysis/objects/3_annotation/UCSC", 
+                             pattern     = "centromeres_hg38.txt", 
+                             ignore.case = T, 
+                             full.names  = T)) %>% 
+  select(-c("#bin")) %>% 
+  makeGRangesFromDataFrame(seqnames.field     = "chrom", 
+                           start.field        = "chromStart", 
+                           end.field          = "chromEnd", 
+                           keep.extra.columns = T)
+
+```
+
+# Separating enhancers into proximal and distal
+```{r}
+
+seqlevelsStyle(naive_enhancers) <- "Ensembl"
+naive_enhancers_p <- subsetByOverlaps(naive_enhancers, promoters)
+naive_enhancers_d <- subsetByOverlaps(naive_enhancers, promoters, invert = T)
+
+seqlevelsStyle(primed_enhancers) <- "Ensembl"
+primed_enhancers_p <- subsetByOverlaps(primed_enhancers, promoters)
+primed_enhancers_d <- subsetByOverlaps(primed_enhancers, promoters, invert = T)
+
+seqlevelsStyle(naive_super_enhancers) <- "Ensembl"
+naive_super_enhancers_p <- subsetByOverlaps(naive_super_enhancers, promoters)
+naive_super_enhancers_d <- subsetByOverlaps(naive_super_enhancers, promoters, invert = T)
+
+seqlevelsStyle(primed_super_enhancers) <- "Ensembl"
+primed_super_enhancers_p <- subsetByOverlaps(primed_super_enhancers, promoters)
+primed_super_enhancers_d <- subsetByOverlaps(primed_super_enhancers, promoters, invert = T)
+
+```
+
+# Exporting annotations to rds object
+```{r}
+
+annotations_list <-
+list(
+"Promoter-proximal Naïve enhancers"              = naive_enhancers_p,
+"Promoter-proximal Primed enhancers"             = primed_enhancers_p,
+"Promoter-proximal Naïve super-enhancers"        = naive_super_enhancers_p,
+"Promoter-proximal Primed super-enhancers"       = primed_super_enhancers_p,
+"Distal Naïve enhancers"                         = naive_enhancers_d,
+"Distal Primed enhancers"                        = primed_enhancers_d,
+"Distal Naïve super-enhancers"                   = naive_super_enhancers_d,
+"Distal Primed super-enhancers"                  = primed_super_enhancers_d,
+"CpG islands"                                    = annotatr_set$hg38_cpg_islands,
+"CGI shores"                                     = annotatr_set$hg38_cpg_shores,
+"CGI shelves"                                    = annotatr_set$hg38_cpg_shelves,
+"CGI inter"                                      = annotatr_set$hg38_cpg_inter,
+"FANTOM5 enhancers"                              = annotatr_set$hg38_enhancers_fantom,
+"Repeats"                                        = repeats,
+"Centromeres"                                    = centromeres,
+"ZNF genes"                                      = ZNF_genes,
+"Gene bodies"                                    = genes,
+"lncRNAs"                                        = lncRNAs,
+"CDS"                                            = cds,
+"Introns"                                        = introns,
+"Exons"                                          = exons,
+"Intergenic regions"                             = intergenic_regions,
+"3' UTRs"                                        = threeUTRs,
+"5' UTRs"                                        = fiveUTRs,
+"TES"                                            = TES,
+"TSS"                                            = TSS,
+"TSS_plus_minus_1Kb"                             = TSS_plus_minus_1Kb,
+"TSS_plus_minus_500b"                            = TSS_plus_minus_500b,
+"Promoters"                                      = promoters,
+"CGI Promoters"                                  = promoters %>% .[.$CGI == TRUE],
+"Non-CGI Promoters"                              = promoters %>% .[.$CGI == FALSE],
+"Human imprints"                                 = human_imprints
+)
+
+```
+
+# Changing chromosome names to ensembl
+```{r}
+
+annotations_list <- 
+map(annotations_list, function(x) {
+  seqlevelsStyle(x) <- "Ensembl"
+  return(x)
+  })
+
+```
+
+# Saving annotations
+```{r}
+
+saveRDS(object = annotations_list, file = "output/database/genome_annotation.rds")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

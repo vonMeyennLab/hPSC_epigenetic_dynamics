@@ -1,0 +1,81 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "ChIP-Seq and ATAC-Seq peaks"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 20, 2022"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# ChIP-Seq and ATAC-Seq MACS2 peaks
+```{r}
+
+# Getting the directories of the macs folders
+macs_directories <- list.files(
+    paste0(
+           "data/results/nf-core_results/",
+           list.files("data/results/nf-core_results/") %>% .[str_detect(., "chipseq|atac")],
+           "/bwa/mergedLibrary/macs"
+           ),
+    full.names = TRUE) 
+
+# Getting the full directories of the macs files
+macs_files <- map(macs_directories, ~ list.files(.x, pattern = "annotatePeaks.txt", full.names = T)) %>%
+              set_names(macs_directories %>%
+                          str_extract("((?<=chipseq_)H\\dK\\d+(me|ac)\\d?)|atacseq") %>%
+                          str_replace("atacseq", "ATAC-Seq"))
+
+# Cleaning and adding metadata to the peaks
+macs_peaks_df <-
+map(macs_files,
+    
+  function(files){ 
+    map_dfr(files,
+            ~ read_tsv(.x) %>%
+              select(1:6) %>%
+              dplyr::rename("peak_id" = 1) %>%
+              mutate(Length = End - Start + 1) %>%
+              janitor::clean_names() %>% 
+              mutate(sample_id = str_extract(peak_id, ".*R\\d") %>%
+                       str_replace_all("_", "-") %>%
+                       str_replace("-d", "_d") %>%
+                       str_replace("-R", "_rep")) %>% 
+              left_join(RNAseq_metadata %>% select(-file), by = c("sample_id"))
+                  )}) %>%
+  map2_df(names(.), ~ mutate(.x, seqtype = .y))
+
+# converting the peaks dataframes into genomic ranges
+macs_peaks_gr <- 
+  GenomicRanges::makeGRangesFromDataFrame(macs_peaks_df %>%
+                                            select(c("chr", "start", "end", "strand", "peak_id", "peak_score", "length", "seqtype", "sample_id", "group", "cell", "day", "replicate", "color")),
+                                          keep.extra.columns = TRUE)
+
+```
+
+# Saving objects
+```{r}
+
+save(macs_peaks_gr, file = "output/database/chipseq_atacseq_peaks.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+This document was processed on: `r Sys.Date()`.

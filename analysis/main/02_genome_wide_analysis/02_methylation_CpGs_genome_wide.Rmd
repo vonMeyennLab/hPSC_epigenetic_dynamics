@@ -1,0 +1,169 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Genome-wide CpG methylation"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 18, 2020"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading CpG methylation data
+```{r}
+
+meth_w_replicates <- readRDS(file = "output/database/meth_counts_w_replicates_df.rds")
+
+# Selecting only autosomes
+meth_w_replicates <- meth_w_replicates %>% map(~ map(.x, ~ .x[.x$seqnames %in% 1:22,]))
+
+# Removing samples from day 3
+meth_w_replicates <- meth_w_replicates %>% .[!names(.) %in% c("cR-H9-EOS d3", "HNES1 d3")]
+
+```
+
+# Methylation categories
+```{r}
+
+# Convert methylation ratio into categories
+meth_CpGs_categories <-
+  map(meth_w_replicates, 
+  ~ map2_df(.x, names(.x),
+            ~ .x %>% 
+            filter(coverage >= 3) %>%
+            mutate(meth_ratio    = numCs/coverage) %>%
+            mutate(meth_category = case_when(meth_ratio < .2  ~ "Low (<20%)", 
+                                             meth_ratio > .8  ~ "High (>80%)", 
+                                             TRUE             ~ "Intermediate (20-80%)")) %>%
+            pull(meth_category) %>% 
+            table %>%
+            as_tibble() %>% 
+            mutate(sample = .y) %>% 
+            dplyr::rename(meth_category = ".")
+    )
+  ) %>% purrr::reduce(rbind)
+
+# Merge methylation categories with metadata columns
+meth_CpGs_categories_df <- 
+  meth_CpGs_categories %>% 
+  left_join(unique(PBAT_metadata %>% .[, c("sample_id", "color", "cell", "group", "day")]), by = c("sample" = "sample_id")) %>%
+  group_by(group) %>%
+  mutate(meth_ratio = n/sum(n)) %>%
+  ungroup %>%
+  mutate(meth_category = factor(meth_category, levels = c("Low (<20%)", "Intermediate (20-80%)", "High (>80%)"))) %>% 
+  arrange(day) %>% 
+  mutate(group = factor(group, levels = (unique(group))))
+
+# Changing group names
+meth_CpGs_categories_df$group <- meth_CpGs_categories_df$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+meth_CpGs_categories_df       <- meth_CpGs_categories_df %>% mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d3", "cR-H9 d3", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+
+# Plot with the percentage of CpGs in each methylation category
+plot_CpG_meth_category <- 
+  ggplot(meth_CpGs_categories_df %>% 
+         group_by(meth_category, group) %>% 
+         summarise(n = sum(n)) %>% 
+         ungroup %>%
+         group_by(group) %>% 
+         mutate(meth_ratio = n/sum(n)) %>% 
+         ungroup %>% 
+         mutate(annotation = "Genome-wide"),
+     aes(group, meth_ratio*100, fill = meth_category)) +
+  geom_bar(stat = "identity", width = 1, color = "black") +
+  theme_publication() +
+  theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, size = 10), 
+        strip.background = element_blank(), 
+        panel.border     = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) + 
+  scale_fill_brewer(palette = "Set1") +
+  scale_x_discrete(expand = c(0,0)) + 
+  scale_y_continuous(expand = c(0,0)) +
+  labs(x = "", y = "Percentage of CpGs (%)", fill = "Methylation category") +
+  facet_grid(~ annotation, labeller = label_wrap_gen(width = 10))
+
+```
+
+# Methylation in bins
+```{r}
+
+# Convert methylation ratio into bins
+meth_CpGs_bins <-
+  map(meth_w_replicates, 
+  ~ map2_df(.x, names(.x),
+            ~ .x %>% 
+            filter(coverage >= 3) %>%
+            mutate(meth_ratio    = numCs/coverage) %>%
+            mutate(meth_bins = cut(meth_ratio, breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1), include.lowest = TRUE)) %>%
+            pull(meth_bins) %>% 
+            table %>%
+            as_tibble() %>% 
+            mutate(sample = .y) %>% 
+            dplyr::rename(meth_bins = ".")
+    )
+  ) %>% purrr::reduce(rbind)
+
+# Merge methylation bins with metadata columns
+meth_CpGs_bins_df <- 
+  meth_CpGs_bins %>% 
+  left_join(unique(PBAT_metadata %>% .[, c("sample_id", "color", "cell", "group", "day")]), by = c("sample" = "sample_id")) %>%
+  group_by(group) %>%
+  mutate(meth_ratio = n/sum(n)) %>%
+  ungroup %>%
+  mutate(meth_bins = factor(meth_bins, levels = unique(meth_bins))) %>% 
+  arrange(day) %>% 
+  mutate(group = factor(group, levels = (unique(group))))
+
+# Changing group names
+meth_CpGs_bins_df$group <- meth_CpGs_bins_df$group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")
+meth_CpGs_bins_df       <- meth_CpGs_bins_df %>% mutate(group = factor(group, levels = unique(group)))
+
+plot_meth_CpGs_bins <- 
+ggplot(meth_CpGs_bins_df %>% 
+         group_by(meth_bins, group, color) %>% 
+         summarise(n = sum(n)) %>% 
+         ungroup %>%
+         group_by(group, color) %>% 
+         mutate(meth_ratio = n/sum(n)) %>% 
+         ungroup,
+     aes(meth_bins, meth_ratio*100, fill = color)) +
+  geom_bar(stat = "identity", width = 1, color = "black") +
+  theme_publication() +
+  theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, size = 8), 
+        strip.background = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) + 
+  scale_fill_identity(aes(color)) +
+  facet_grid(~ group) +
+  labs(x = "", y = "Methylation percentage (%)", fill = "Sample group")
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/02_genome_wide_analysis/meth_CpGs_genome_wide_1.svg", width = 2.5, height = 3.5)
+plot_CpG_meth_category
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

@@ -1,0 +1,58 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Metadata"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 11, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Transcript-to-gene mapping
+```{r}
+
+# Path to the GTF file 
+gtf <- list.files(path       = "genomes/Homo_sapiens/GRCh38/Ensembl/release-98",
+                  pattern    = "gtf",
+                  full.names = T)
+
+# Name for the transcript database 
+txdb.filename <- gtf %>%
+                 str_extract(pattern = "([^/]+$)") %>%
+                 str_replace(pattern = ".gtf", replacement = "_txDb.sqlite")
+
+# Create the transcript database from GTF file
+GenomicFeatures::makeTxDbFromGFF(gtf, organism = "Homo sapiens", format = "gtf") %>%
+  saveDb(paste0("output/database/", txdb.filename))
+
+# Create the ensembl database from GTF file
+# Note that this creates the SQLite database and does not return an EnsDb.
+ensDbFromGtf(gtf           = gtf,
+             path          = "output/database/",
+             outfile       = "output/database/Homo_sapiens.GRCh38.98_ensDb.sqlite",
+             genomeVersion = "GRCh38",
+             organism      = "Homo_sapiens",
+             version       = "98")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

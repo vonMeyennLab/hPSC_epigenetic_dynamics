@@ -1,0 +1,117 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Create genome annotation - extra"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Genes with the same expression level between conditions
+```{r}
+
+# Loading RNA-Seq counts
+load(file = "output/database/rnaseq_counts.RData")
+
+# Gene ids from genes with the same expression category in all samples
+gene_ids_by_expression_levels <- 
+list(
+"High expression"   = RNAseq_normalized_counts %>% as.data.frame() %>% mutate_all(~ log2(.x + 1)) %>% filter_all(all_vars(. > 8)) %>% rownames() %>% unique,
+"Low expression"    = RNAseq_normalized_counts %>% as.data.frame() %>% mutate_all(~ log2(.x + 1)) %>% filter_all(all_vars(. < 3)) %>% rownames() %>% unique,
+"Median expression" = RNAseq_normalized_counts %>% as.data.frame() %>% mutate_all(~ log2(.x + 1)) %>% filter_all(all_vars(. >= 3)) %>% filter_all(all_vars(. <= 8)) %>% rownames() %>% unique
+)
+
+```
+
+# Bivalent promoters
+```{r}
+
+# Loading MACS2 peaks
+load("output/database/chipseq_atacseq_peaks.RData")
+
+# Both H3K27me3 and H3K4me3 peaks
+macs_peaks_H3K27me3_H3K4me3 <-
+  macs_peaks_gr %>% 
+  as.data.frame() %>%
+  filter(seqtype %in% c("H3K4me3", "H3K27me3")) %>% 
+  named_group_split(group) %>% 
+  map(~ named_group_split(.x, seqtype) %>% map(~ makeGRangesFromDataFrame(.x, keep.extra.columns = T)))
+
+# Bivalent promoters
+bivalent_promoters_by_group <- 
+  map2(macs_peaks_H3K27me3_H3K4me3, names(macs_peaks_H3K27me3_H3K4me3), 
+       function(x,y){
+         
+         TSS_bivalent_gene_id <-
+           subsetByOverlaps(genome_annotation$TSS, x$H3K27me3) %>% subsetByOverlaps(x$H3K4me3) %>% as.data.frame() %>% .$gene_id %>% unique
+         
+         genome_annotation$Promoters %>% .[.$gene_id %in% TSS_bivalent_gene_id]
+         
+         })
+
+```
+
+# Exporting annotations to rds object
+```{r}
+
+annotations_list <-
+list(
+"CGI Promoters (high expression)"                = genome_annotation$Promoters %>% .[.$CGI == TRUE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`High expression`],
+"CGI Promoters (median expression)"              = genome_annotation$Promoters %>% .[.$CGI == TRUE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`Median expression`],
+"CGI Promoters (low expression)"                 = genome_annotation$Promoters %>% .[.$CGI == TRUE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`Low expression`],
+"Non-CGI Promoters (high expression)"            = genome_annotation$Promoters %>% .[.$CGI == FALSE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`High expression`],
+"Non-CGI Promoters (median expression)"          = genome_annotation$Promoters %>% .[.$CGI == FALSE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`Median expression`],
+"Non-CGI Promoters (low expression)"             = genome_annotation$Promoters %>% .[.$CGI == FALSE] %>% .[.$gene_id %in% gene_ids_by_expression_levels$`Low expression`],
+"Bivalent promoters HNES1 d0"                    = bivalent_promoters_by_group$`HNES1 d0`,
+"Bivalent promoters cR-H9 d0"                    = bivalent_promoters_by_group$`cR-H9-EOS d0`,
+"Bivalent promoters HNES1 d10"                   = bivalent_promoters_by_group$`HNES1 d10`,
+"Bivalent promoters cR-H9 d10"                   = bivalent_promoters_by_group$`cR-H9-EOS d10`,
+"Bivalent promoters cR-H9 d20X"                  = bivalent_promoters_by_group$`cR-H9-EOS d20X`,
+"Bivalent promoters cR-H9 d20E"                  = bivalent_promoters_by_group$`cR-H9-EOS d20E`,
+"Bivalent promoters H9 Primed"                   = bivalent_promoters_by_group$`H9-EOS`
+)
+
+# Adding annotated promoters to annotation list 
+genome_annotation <- c(genome_annotation, annotations_list)
+
+```
+
+# Changing chromosome names to ensembl
+```{r}
+
+genome_annotation <- 
+map(genome_annotation, function(x) {
+  seqlevelsStyle(x) <- "Ensembl"
+  return(x)
+  })
+
+```
+
+# Saving annotations
+```{r}
+
+saveRDS(object = genome_annotation, file = "output/database/genome_annotation.rds")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

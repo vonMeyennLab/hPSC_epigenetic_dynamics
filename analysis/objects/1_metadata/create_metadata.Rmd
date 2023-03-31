@@ -1,0 +1,182 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Metadata"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 11, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Conversion vectors
+```{r}
+
+# These vectors will be used to manually convert the metadata values.
+
+# Colors associated with each sample group
+group_colors <- c(
+                    colorRampPalette(brewer.pal(9, "YlOrRd"))(8) %>%
+                    setNames(paste("cR-H9-EOS", c(0, 1, 2, 3, 7, 10, "20X", "20E"), sep = " d")),
+                    
+                    colorRampPalette(brewer.pal(9, "Blues"))(8) %>%
+                    setNames(paste("HNES1", c(0, 1, 2, 3, 7, 10, "20X", "20E"), sep = " d")),
+                    
+                    "darkgray" %>%
+                    setNames(c("H9-EOS"))
+                  )
+
+# Vector to convert the sample abbreviation to the cell type
+sampleID_into_celltype <- c(
+                          set_names(rep("HNES1", 4), c("A", "B", "C", "D")),
+                          set_names(rep("cR-H9-EOS", 4), c("W", "X", "Y", "Z")),
+                          set_names(rep("H9-EOS", 1), c("H9-ctrl"))
+                          )
+
+# Vector to convert the sample abbreviation to replicate
+sampleID_into_replicate <- c(
+                          set_names(1:4, c("A", "C", "D", "B")),
+                          set_names(1:4, c("W", "X", "Z", "Y")),
+                          set_names(1:4, c("H9-ctrl1", "H9-ctrl3", "H9-ctrl4", "H9Ctrl2"))
+                          )
+
+```
+
+# RNA-Seq
+```{r}
+
+# Dataframe with full directory of the RNA-Seq Salmon files
+RNAseq_metadata <-
+  tibble(file = 
+              list.files(
+                          path = "data/results/nf-core_results/rnaseq_single_end/salmon",
+                          recursive = T,
+                          pattern = "quant.sf",
+                          full.names = T
+                        )
+  )
+
+# extract the cell type from the file name
+RNAseq_metadata$cell <- RNAseq_metadata$file %>%
+                        str_extract("(?<=lane1_)[ACDXWZ]") %>%
+                        tidyr::replace_na("H9-ctrl") %>%
+                        sampleID_into_celltype[.] %>%
+                        factor(levels = c("HNES1", "cR-H9-EOS", "H9-EOS"))
+
+# extract the day type from the file name
+RNAseq_metadata$day <- RNAseq_metadata$file %>%
+                       str_extract("(?<=lane1_[ACDXWZ])\\d+[EX]?") %>%
+                       tidyr::replace_na("H9-EOS") %>% 
+                       ifelse(str_detect(., "[23]\\dE"), "20E", .) %>% 
+                       ifelse(str_detect(., "[23]\\dX"), "20X", .) %>% 
+                       factor(levels = c(0, 1, 2, 3, 7, 10, "20X", "20E", "H9-EOS"))
+
+# extract the replicate number from the file name
+RNAseq_metadata$replicate <- RNAseq_metadata$file %>%
+                             str_extract("(?<=lane1_)[ACDXWZ]|(?<=lane1_)H9-ctrl\\d") %>%
+                             sampleID_into_replicate[.] %>% 
+                             factor(levels = 1:3)
+
+# add group column to the metadata dataframe
+RNAseq_metadata$group <- paste(RNAseq_metadata$cell, RNAseq_metadata$day, sep = " d") %>%
+                         str_remove(" dH9-EOS")
+
+# add sample id to each sample in the metadata dataframe
+RNAseq_metadata$sample_id <- str_replace(RNAseq_metadata$group, " ", "_") %>% paste(RNAseq_metadata$replicate, sep = "_rep")
+
+# add colors to each group in the metadata dataframe
+RNAseq_metadata$color <- group_colors[RNAseq_metadata$group]
+
+```
+
+# PBAT
+```{r}
+
+pbat_samples <- 
+list.files("data/results/nf-core_results/pbat/")
+
+pbat_files <- 
+list.files(paste0("data/results/nf-core_results/pbat/", pbat_samples, "/bismark_methylation_calls/methylation_coverage"), full.names = T)
+
+# Dataframe with full directories
+PBAT_metadata <- tibble(file = pbat_files)
+
+# extract the cell type from the file name
+PBAT_metadata$cell <- PBAT_metadata$file %>%
+                      str_remove("data/results/nf-core_results/pbat/pbat_sample_\\d+/bismark_methylation_calls/methylation_coverage/") %>% 
+                      str_remove("lane\\d+_[A-Z]+_") %>%
+                      str_remove("(?=.*)_.*") %>% 
+                      str_extract("[ABCDXWYZ](?=\\d)") %>%
+                      tidyr::replace_na("H9-ctrl") %>%
+                      sampleID_into_celltype[.] %>%
+                      factor(levels = c("HNES1", "cR-H9-EOS", "H9-EOS"))
+
+# extract the day type from the file name
+PBAT_metadata$day <- PBAT_metadata$file %>%
+                      str_remove("data/results/nf-core_results/pbat/pbat_sample_\\d+/bismark_methylation_calls/methylation_coverage/") %>% 
+                      str_remove("lane\\d+_[A-Z]+_") %>%
+                      str_remove("(?=.*)_.*") %>% 
+                      str_extract("(?<=[ABCDXWYZ])\\d+[EX]?") %>%
+                      tidyr::replace_na("H9-EOS") %>%
+                      ifelse(str_detect(., "[23]\\dE"), "20E", .) %>%
+                      ifelse(str_detect(., "[23]\\dX"), "20X", .) %>%
+                      factor(levels = c(0, 3, 10, "20X", "20E", "H9-EOS"))
+
+# extract the replicate number from the file name
+PBAT_metadata$replicate <- PBAT_metadata$file %>%
+                           str_remove("data/results/nf-core_results/pbat/pbat_sample_\\d+/bismark_methylation_calls/methylation_coverage/") %>% 
+                           str_remove("lane\\d+_[A-Z]+_") %>%
+                           str_remove("(?=.*)_.*") %>%
+                           str_remove("(?<=[ABCDXWYZ])\\d+[EX]?") %>% 
+                           sampleID_into_replicate[.] %>% 
+                           factor(levels = 1:4)
+
+# add group column to the metadata dataframe
+PBAT_metadata$group <- paste(PBAT_metadata$cell, PBAT_metadata$day, sep = " d") %>%
+                       str_remove(" dH9-EOS")
+
+# add sample id to each sample in the metadata dataframe
+PBAT_metadata$sample_id <- str_replace(PBAT_metadata$group, " ", "_") %>% paste(PBAT_metadata$replicate, sep = "_rep")
+
+# add colors to each group in the metadata dataframe
+PBAT_metadata$color <- group_colors[PBAT_metadata$group]
+
+# add batch
+PBAT_metadata$batch <- PBAT_metadata$file %>% 
+                       str_extract("pbat_sample_\\d+")
+
+# removing duplicated samples
+PBAT_metadata <- 
+PBAT_metadata[order(PBAT_metadata$sample_id, PBAT_metadata$batch), ] %>% .[! duplicated(.$sample_id, fromLast = T), ]
+
+```
+
+# Exporting metadata
+```{r, eval = FALSE}
+
+save(RNAseq_metadata, PBAT_metadata, file = "output/database/metadata.RData")
+
+# cleaning metadata objects to avoid using this objects in the next chunck
+rm(RNAseq_metadata, PBAT_metadata)
+
+```
+
+# Session information
+```{r session_info, eval = TRUE, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

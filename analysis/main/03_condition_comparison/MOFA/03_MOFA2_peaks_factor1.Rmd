@@ -1,0 +1,607 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "MOFA2 - Epigenetic changes by combined marks (Factor 1)"
+author:   "João Pedro Agostinho de Sousa"
+date:     "April 19, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading model
+```{r}
+
+model <- load_model("tmp/MOFA2_peaks_w_methylation.hdf5")
+
+```
+
+# Weights
+```{r}
+
+weights <-
+  get_weights(model, as.data.frame = T) %>%
+  mutate(factor = factor(factor, paste0("Factor", 1:3))) %>%
+  mutate(view = factor(view, levels = rev(c("ATAC-seq","H3K4me3","H3K27ac","H3K4me1","H3K27me3","H3K9me3","Methylation"))))
+
+```
+
+# Features with model weights separated by assay
+```{r}
+
+weights_list <-
+  weights %>%
+  named_group_split(view) %>%
+  map2(names(.), ~ mutate(.x, feature = str_remove(feature, paste0("_", .y))))
+
+```
+
+# Data for the plots
+```{r}
+
+plot_data <- 
+  weights_list %>%
+  purrr::reduce(rbind) %>%
+  spread(view, value) %>%
+  filter(factor == "Factor1") %>%
+  mutate(feature_type = case_when(!is.na(Methylation) & Methylation > 0 ~ "Methylation.Naive"),
+         feature_type = case_when(!is.na(Methylation) & Methylation < 0 ~ paste(feature_type, "Methylation.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(H3K9me3) & H3K9me3 > 0 ~ paste(feature_type, "H3K9me3.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(H3K9me3) & H3K9me3 < 0 ~ paste(feature_type, "H3K9me3.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(H3K27me3) & H3K27me3 > 0 ~ paste(feature_type, "H3K27me3.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(H3K27me3) & H3K27me3 < 0 ~ paste(feature_type, "H3K27me3.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(H3K4me1) & H3K4me1 > 0 ~ paste(feature_type, "H3K4me1.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(H3K4me1) & H3K4me1 < 0 ~ paste(feature_type, "H3K4me1.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(H3K27ac) & H3K27ac > 0 ~ paste(feature_type, "H3K27ac.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(H3K27ac) & H3K27ac < 0 ~ paste(feature_type, "H3K27ac.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(H3K4me3) & H3K4me3 > 0 ~ paste(feature_type, "H3K4me3.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(H3K4me3) & H3K4me3 < 0 ~ paste(feature_type, "H3K4me3.Primed", sep = "_"), TRUE ~ feature_type),
+         
+         feature_type = case_when(!is.na(`ATAC-seq`) & `ATAC-seq` > 0 ~ paste(feature_type, "ATAC-seq.Naive", sep = "_"), TRUE ~ feature_type),
+         feature_type = case_when(!is.na(`ATAC-seq`) & `ATAC-seq` < 0 ~ paste(feature_type, "ATAC-seq.Primed", sep = "_"), TRUE ~ feature_type),
+         feature_type = str_remove(feature_type, "NA_")
+         ) %>%
+  mutate(n_marks = case_when(!is.na(Methylation) ~ "1"),
+         n_marks = case_when(!is.na(H3K9me3)    ~ paste(n_marks, '1', sep = "+"), TRUE ~ n_marks),
+         n_marks = case_when(!is.na(H3K27me3)   ~ paste(n_marks, "1", sep = "+"), TRUE ~ n_marks),
+         n_marks = case_when(!is.na(H3K4me1)    ~ paste(n_marks, "1", sep = "+"), TRUE ~ n_marks),
+         n_marks = case_when(!is.na(H3K27ac)    ~ paste(n_marks, "1", sep = "+"), TRUE ~ n_marks),
+         n_marks = case_when(!is.na(H3K4me3)    ~ paste(n_marks, "1", sep = "+"), TRUE ~ n_marks),
+         n_marks = case_when(!is.na(`ATAC-seq`) ~ paste(n_marks, "1", sep = "+"), TRUE ~ n_marks),
+         n_marks = str_remove(n_marks, "NA\\+")
+         ) %>%
+  mutate(n_marks = case_when(n_marks == "1" ~ "1 epigenetic mark",
+                             n_marks == "1+1" ~ "2 epigenetic marks",
+                             n_marks == "1+1+1" ~ "3 epigenetic marks",
+                             n_marks == "1+1+1+1" ~ "4 epigenetic marks",
+                             n_marks == "1+1+1+1+1" ~ "5 epigenetic marks",
+                             n_marks == "1+1+1+1+1+1" ~ "6 epigenetic marks",
+                             n_marks == "1+1+1+1+1+1+1" ~ "7 epigenetic marks")) %>% 
+  group_by(feature_type) %>% 
+  mutate(feature_type_count = n()) %>% 
+  ungroup() %>% 
+  mutate(feature_type = case_when(feature_type_count < 200 ~ "Other combinations",
+                                  TRUE ~ feature_type)) %>%
+  filter(feature_type != "Other combinations") %>%
+  select(-factor) %>%
+  gather(seqtype, value, -feature_type, -n_marks, -feature_type_count, -feature) %>%
+  na.omit
+
+plot_data <- 
+  plot_data %>% 
+  mutate(feature_type_group = str_remove_all(feature_type, ".Primed") %>% str_remove_all(".Naive")) %>% 
+  mutate(feature_type = paste0(feature_type, " (", feature_type_count,")")) %>% 
+  group_by(feature_type_group) %>% 
+  mutate(feature_type_group_count = n()) %>% 
+  ungroup %>%
+  group_by(feature_type) %>% 
+  mutate(feature_type_median_value = median(abs(value))) %>% 
+  ungroup %>% 
+  arrange(dplyr::desc(feature_type_median_value), dplyr::desc(feature_type_count), dplyr::desc(feature_type_group_count)) %>% 
+  mutate(feature_type = factor(feature_type, levels = unique(feature_type))) %>%
+  mutate(feature_type_group = factor(feature_type_group, levels = unique(feature_type_group))) %>% 
+  filter(feature_type %in% head(unique(feature_type), 20))
+
+```
+
+# Heatmap with changes between Naive and Primed
+```{r}
+
+plot_features_heatmap_data <-
+ plot_data %>%
+  select(-c("feature_type_count", "seqtype", "value", "n_marks", "feature", "feature_type_median_value")) %>%
+  unique %>%
+  mutate(
+    
+    `ATAC-seq`    = case_when(str_detect(feature_type, "ATAC\\-seq\\.Naive") ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "ATAC\\-seq\\.Primed") ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    H3K4me3       = case_when(str_detect(feature_type, "H3K4me3.Naive")      ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "H3K4me3.Primed")      ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    H3K27ac       = case_when(str_detect(feature_type, "H3K27ac.Naive")      ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "H3K27ac.Primed")      ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    H3K4me1       = case_when(str_detect(feature_type, "H3K4me1.Naive")      ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "H3K4me1.Primed")      ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    H3K27me3      = case_when(str_detect(feature_type, "H3K27me3.Naive")     ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "H3K27me3.Primed")     ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    H3K9me3       = case_when(str_detect(feature_type, "H3K9me3.Naive")      ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "H3K9me3.Primed")      ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray"),
+    Methylation   = case_when(str_detect(feature_type, "Methylation.Naive")  ~ brewer.pal(n = 10, name = "RdYlGn")[2], str_detect(feature_type, "Methylation.Primed")  ~ brewer.pal(n = 10, name = "RdYlGn")[9], TRUE ~ "gray")
+  
+) %>%
+  gather(seqtype, color, -feature_type, -feature_type_group, -feature_type_group_count) %>%
+  mutate(label = case_when(color == brewer.pal(n = 10, name = "RdYlGn")[2] ~ "Loss",
+                           color == brewer.pal(n = 10, name = "RdYlGn")[9] ~ "Gain")) %>%
+  mutate(feature_type_simplified = str_remove(feature_type, " \\(\\d+\\)") %>% str_replace_all(".Naive", " +") %>% str_replace_all(".Primed", " +") %>% str_remove("\\s\\+$") %>% str_replace_all("_", " ")) %>% 
+  mutate(seqtype = factor(seqtype, levels = c(
+                                            "ATAC-seq",
+                                            "H3K4me3",
+                                            "H3K27ac",
+                                            "H3K4me1",
+                                            "H3K27me3",
+                                            "H3K9me3",
+                                            "Methylation"
+  )))
+
+plot_features_heatmap <- 
+ggplot(plot_features_heatmap_data, aes(seqtype, feature_type, fill = color, label = label)) +
+  geom_tile(color = "black") +
+  geom_text() +
+  scale_fill_identity(aes(color)) +
+  scale_y_discrete(labels = plot_features_heatmap_data %>% select(feature_type, feature_type_simplified) %>% unique %>% pull(feature_type_simplified) %>% set_names(plot_features_heatmap_data %>% select(feature_type, feature_type_simplified) %>% unique %>% pull(feature_type) %>% as.character())) +
+  theme_publication() +
+  theme(strip.text   = element_blank(),
+        axis.ticks   = element_blank(),
+        panel.border = element_blank(),
+        axis.text.x  = element_text(face = "bold")) +
+  scale_x_discrete(position = "bottom") +
+  facet_wrap(feature_type ~ ., scales = "free_y", ncol = 1) +
+  labs(x = "", y = "")
+
+```
+
+# Boxplot with the model weights
+```{r}
+
+plot_features_boxplot <-
+ggplot(plot_data %>% select(feature_type, seqtype, value, feature_type_median_value) %>% unique, 
+       aes(feature_type, abs(value), fill = feature_type_median_value)) +
+  geom_hline(yintercept = 0.5) +
+  geom_violin(show.legend = F) +
+  coord_flip() +
+  theme_publication() +
+  theme(strip.text   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.border = element_blank()) +
+  scale_fill_continuous() +
+  theme(strip.text = element_blank()) + 
+  labs(y = "Absolute loading", x = "") +
+  facet_wrap(feature_type ~ ., scales = "free_y", ncol = 1)
+
+```
+
+# Barplot with feature count
+```{r}
+
+plot_features_count <-
+  plot_data %>% 
+  filter(abs(value) > 0.5) %>%
+  select(feature, feature_type) %>% 
+  unique %>% 
+  separate(col = "feature", sep = ":", into = c("chr", "start", "end")) %>% 
+  makeGRangesFromDataFrame(keep.extra.columns = T) %>% 
+  as.data.frame() %>% 
+  group_by(feature_type) %>% 
+  summarise(width = sum(width)) %>% 
+  ungroup %>% 
+  ggplot(aes(feature_type, width/10^3, label = paste(round(width/10^3, 0), "Kbps"))) +
+  geom_col(color = "black") +
+  geom_text(aes(y = width/10^3 * 1.3), hjust = 0) +
+  coord_flip() +
+  theme_publication() +
+  scale_fill_brewer(palette = 'Set2', direction = 1) +
+  scale_y_continuous(expand = c(0.1, 0), trans = "log10") +
+  theme(strip.text       = element_blank(),
+        axis.ticks.y     = element_blank(),
+        axis.ticks.x     = element_blank(),
+        panel.border     = element_blank(),
+        axis.text.y      = element_blank(), 
+        axis.text.x      = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  labs(y = "", x = "") + 
+  facet_wrap(feature_type ~ ., scales = "free_y", ncol = 1)
+
+```
+
+# Plot with the percentage of significant regions overlapping annotations
+```{r}
+
+# Granges object separated by feature type
+plot_data_by_feature_type <- 
+  plot_data %>% 
+  filter(abs(value) > 0.5) %>%
+  select(feature, feature_type) %>% 
+  unique %>% 
+  separate(col = "feature", sep = ":", into = c("chr", "start", "end")) %>% 
+  named_group_split(feature_type) %>% 
+  map(~ makeGRangesFromDataFrame(.x, keep.extra.columns = T)) %>% 
+  GRangesList()
+
+# Subset of the annotation files
+genome_annotation_subset <- 
+  genome_annotation %>% .[c("Promoters", "Distal Naïve enhancers", "Distal Naïve super-enhancers", "Distal Primed enhancers", "Distal Primed super-enhancers", "Exons", "Introns", "Intergenic regions")] %>% GRangesList()
+
+# Dataframe with the number of peaks that overlap annotations
+plot_data_annot_df <- 
+ plot_data %>% 
+ filter(abs(value) > 0.5) %>%
+ select(feature, feature_type) %>% 
+ unique %>% 
+ separate(col = "feature", sep = ":", into = c("chr", "start", "end")) %>%
+ named_group_split(feature_type) %>%
+ map(~ GenomicRanges::makeGRangesFromDataFrame(.x, keep.extra.columns = TRUE)) %>%
+ map2(names(.), ~ annotate_regions_by_frequency(genomic_regions             = .x, 
+                                                annotation_list             = genome_annotation_subset,
+                                                name                        = .y, 
+                                                with_duplicated_annotations = FALSE,
+                                                apply_GRanges_reduce        = FALSE)) %>% 
+ dplyr::bind_rows() %>% 
+  mutate(experiment = factor(experiment, levels = unique(experiment)),
+         annotation = factor(annotation, levels = c("Promoters", "Distal Naïve enhancers", "Distal Naïve super-enhancers", "Distal Primed enhancers", "Distal Primed super-enhancers", "Exons", "Introns", "Intergenic regions")))
+
+# Plot with the number of peaks that overlap annotations
+plot_annot_perct <- 
+ggplot(data    = plot_data_annot_df,
+       mapping = aes(fct_rev(experiment), frequency*100, fill = fct_rev(annotation))) +
+    geom_bar(mapping     = aes(y = frequency*100),
+             stat        = 'identity',
+             color       = "black",
+             show.legend = T) +
+    theme_publication() +
+    theme(axis.text.y      = element_text(size = 10),
+          axis.text.x      = element_text(size = 10),
+          strip.text       = element_text(size = 10),
+          legend.position  = "left",
+          legend.key.size  = unit(0.4, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), 
+          panel.border     = element_blank(),
+          legend.margin    = margin(l = -10), 
+          strip.text.y     = element_text(angle = 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_fill_manual(values = c(
+      "Promoters"                     = brewer.pal(name = "RdBu", n = 11)[10],
+      "Distal Naïve enhancers"        = brewer.pal(name = "Purples", n = 9)[7],
+      "Distal Naïve super-enhancers"  = brewer.pal(name = "Purples", n = 9)[5],
+      "Distal Primed enhancers"       = brewer.pal(name = "Purples", n = 9)[3],
+      "Distal Primed super-enhancers" = brewer.pal(name = "Purples", n = 9)[1],
+      "Exons"                         = brewer.pal(name = "RdBu", n = 11)[5],
+      "Introns"                       = brewer.pal(name = "RdBu", n = 11)[4],
+      "Intergenic regions"            = brewer.pal(name = "RdBu", n = 11)[2]
+      )) + 
+    xlab('') +
+    ylab('Percentage of peaks (%)') +
+    coord_flip() +
+    guides(fill = guide_legend(reverse = T, title = "", ncol = 1, direction = "vertical"))
+
+```
+
+# Enrichment results
+```{r}
+
+# Loading LOLA Core databases
+RegionDB_LOLACore <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACore/hg38", useCache = T)
+
+# Loading LOLA custom databases
+RegionDB_custom <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACustom/hg38", useCache = F)
+
+# Loading LOLA database
+RegionDB_LOLAExt <- loadRegionDB(dbLocation = "output/database/LOLA/LOLAExt/hg38", useCache = T, collections = "jaspar_motifs")
+
+# USER SET
+userSets <- 
+  plot_data %>%
+  filter(abs(value) > 0.5) %>% 
+  select(feature, feature_type) %>%
+  unique %>%
+  named_group_split(feature_type) %>%
+  map(~
+        tidyr::separate(.x, feature, c("chr", "start", "end"), sep = ":") %>%
+        makeGRangesFromDataFrame(keep.extra.columns = T)
+      )
+
+# UNIVERSE SET
+universeSets <- 
+  plot_data %>%
+  select(feature, feature_type) %>%
+  unique %>%
+  named_group_split(feature_type) %>%
+  map(~
+        tidyr::separate(.x, feature, c("chr", "start", "end"), sep = ":") %>%
+        makeGRangesFromDataFrame(keep.extra.columns = T)
+      )
+
+LOLA_results <- 
+map2_df(userSets, names(userSets), function(x, y){
+  
+  # LOLAcustom results
+  LOLAcustom_results <- runLOLA(x, universeSets[[y]], RegionDB_custom, cores = 20, direction = "enrichment")
+  
+  # LOLACore results
+  seqlevelsStyle(x) <- "UCSC"
+  seqlevelsStyle(universeSets[[y]]) <- "UCSC"
+  LOLACore_results <- runLOLA(x, universeSets[[y]], RegionDB_LOLACore, cores = 20, direction = "enrichment")
+  
+  # LOLAExt results
+  LOLAExt_results <- runLOLA(x, universeSets[[y]], RegionDB_LOLAExt, cores = 20, direction = "enrichment")
+  
+  rbind(as.data.frame(LOLAcustom_results) %>% mutate(database = "LOLAcustom"),
+        as.data.frame(LOLACore_results) %>% mutate(database = "LOLACore"),
+        as.data.frame(LOLAExt_results) %>% mutate(database = "LOLAExt")) %>% 
+  mutate(userSet = y)
+})
+
+```
+
+# Fold enrichment heatmap (Genome annotation)
+```{r}
+
+# Enrichment heatmap
+enrichment_data <- 
+  LOLA_results %>%
+  mutate(userSet = 
+           str_remove(userSet, "\\s\\(\\d+\\)") %>% 
+           str_replace_all("\\.Primed", " Primed") %>%
+           str_replace_all("\\.Naive", " Naïve") %>% 
+           str_replace_all("_", " + ")
+         ) %>%
+  filter(collection %in% c("genome_annotation", "genome_annotation", "ucsc_features", "repeats", "chromosomes", "codex")) %>%
+  mutate(collection = case_when(
+         collection == "genome_annotation" & str_detect(description, "enhancer") ~ "Enhancers",
+         collection == "genome_annotation" & str_detect(description, "Promoter") ~ "Promoters",
+         collection == "genome_annotation" & str_detect(description, "CpG|CGI")  ~ "CpG islands",
+         TRUE ~ collection)) %>% 
+  mutate(collection = 
+           str_replace(collection, "repeats", "Repeats") %>%
+           str_replace("genome_annotation", "Genome annotation") %>%
+           str_replace("ucsc_features", "UCSC features") %>%
+           str_replace("chromosomes", "Chromosomes")) %>%
+  mutate(collection = factor(collection, levels = c("Genome annotation", "CpG islands", "Promoters", "Enhancers", "UCSC features", "Repeats", "Chromosomes", "codex", "encode_tfbs"))) %>% 
+  filter(!str_detect(description, "TSS|CDS|bodies")) %>%
+  mutate(description = str_replace(description, "chromosome", "Chromosome")) %>%
+  mutate(description = str_replace(description, "CGI inter", "Outside CGIs")) %>%
+  mutate(description = str_replace(description, "\\_\\(.*", "")) %>%
+  filter(qValue < 0.05) %>%
+  filter(pValueLog > 40) %>%
+  mutate(userSet = 
+           factor(userSet, 
+                  levels = rev(unique(plot_data %>% 
+                                        mutate(feature_type = str_remove(feature_type, "\\s\\(\\d+\\)") %>%
+                                                 str_replace_all("\\.Primed", " Primed") %>% 
+                                                 str_replace_all("\\.Naive", " Naïve") %>% 
+                                                 str_replace_all("_", " + ")
+                                               ) %>% 
+                                        .$feature_type %>% as.character())))
+         ) %>% 
+  group_by(userSet, collection, description) %>% 
+           summarize(pValueLog = mean(pValueLog), oddsRatio = mean(oddsRatio), qValue = mean(qValue)) %>% 
+           ungroup %>% 
+  arrange(collection, userSet, pValueLog, oddsRatio) %>% 
+  mutate(description = factor(description, levels = unique(description))) %>% 
+  ungroup
+
+# Fold enrichment pvalue
+enrichment_data_pvalue_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
+  filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
+  filter(collection != "Repeats") %>%
+  select(-oddsRatio, -qValue, -collection) %>% 
+  arrange(dplyr::desc(pValueLog)) %>%
+  spread(description, pValueLog) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# Fold enrichment oddsRatio
+enrichment_data_oddsRatio_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
+  filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
+  mutate(oddsRatio = log2(oddsRatio)) %>% 
+  filter(collection != "Repeats") %>% 
+  select(-pValueLog, -qValue, -collection) %>% 
+  arrange(dplyr::desc(oddsRatio)) %>% 
+  spread(description, oddsRatio) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# color function
+col_fun <- circlize::colorRamp2(c(0,0.5,2.5,5), colors = c("lightblue", "white", "red", "darkred"))
+
+enrichment_ht_1 <- 
+ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_1, 
+                        name             = "Log2(odds ratio)",
+                        col              = col_fun,
+                        cluster_rows     = F,
+                        cluster_columns  = T,
+                        column_names_rot = 45,
+                        border           = "black", 
+                        rect_gp          = gpar(col = "gray", fill = NA),
+                        cell_fun         = function(j, i, x, y, width, height, fill) {
+                          grid.circle(x  = x, 
+                                      y  = y, 
+                                      r  = (enrichment_data_pvalue_1[i, j])/7000,
+                                      gp = gpar(fill = col_fun(enrichment_data_oddsRatio_1[i, j]), col = "black"))
+                          })
+
+```
+
+# Enrichment heatmap (Repeats)
+```{r}
+
+# Fold enrichment pvalue
+enrichment_data_pvalue_2 <- 
+  enrichment_data %>% 
+  filter(collection == "Repeats") %>%
+  select(-oddsRatio, -qValue, -collection) %>% 
+  arrange(dplyr::desc(pValueLog)) %>%
+  spread(description, pValueLog) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# Fold enrichment oddsRatio
+enrichment_data_oddsRatio_2 <- 
+  enrichment_data %>%
+  mutate(oddsRatio = log2(oddsRatio)) %>% 
+  filter(collection == "Repeats") %>% 
+  select(-pValueLog, -qValue, -collection) %>% 
+  arrange(dplyr::desc(oddsRatio)) %>% 
+  spread(description, oddsRatio) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# color function
+col_fun <- circlize::colorRamp2(c(0,0.5,2.5,5), colors = c("lightblue", "white", "red", "darkred"))
+
+enrichment_ht_2 <- 
+ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2, 
+                        name             = "Log2(odds ratio)",
+                        col              = col_fun,
+                        cluster_rows     = F,
+                        cluster_columns  = T,
+                        column_names_rot = 45,
+                        border           = "black", 
+                        rect_gp          = gpar(col = "gray", fill = NA),
+                        cell_fun         = function(j, i, x, y, width, height, fill) {
+                          grid.circle(x  = x, 
+                                      y  = y, 
+                                      r  = (enrichment_data_pvalue_2[i, j])/5000,
+                                      gp = gpar(fill = col_fun(enrichment_data_oddsRatio_2[i, j]), col = "black"))
+                          })
+
+```
+
+# Gene ontology of the significant regions
+```{r}
+
+GOterms_results <- 
+map2(userSets, names(userSets),
+  function(x, y){
+  
+userSets_distanceToTSS <- distanceToNearest(x, genome_annotation$TSS) %>% as.data.frame() %>% filter(distance < 50000) %>% pull(subjectHits) %>% unique()
+universeSets_distanceToTSS <- distanceToNearest(universeSets[[y]], genome_annotation$TSS) %>% as.data.frame() %>% filter(distance < 50000) %>% pull(subjectHits) %>% unique()
+
+GOterms <- 
+enrichGO(gene          = genome_annotation$TSS[userSets_distanceToTSS, ] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         universe      = genome_annotation$TSS[universeSets_distanceToTSS, ] %>% as.data.frame() %>% pull(gene_id) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.01,
+         readable      = TRUE
+         ) %>%
+  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+
+return(GOterms)
+})
+
+```
+
+# CpG island analysis
+```{r}
+
+LOLA_results_CGIs <- 
+  LOLA_results %>%
+  as.data.frame() %>%
+  filter(qValue < 0.05) %>%
+  filter(collection %in% c("CpG_islands", "GCskew")) %>% 
+  mutate(userSet = case_when(userSet == "H3K27me3.Primed (10988)" ~ "H3K27me3 Primed",
+                             userSet == "H3K9me3.Naive (13943)"   ~ "H3K9me3 Naïve",
+                             userSet == "H3K27ac.Primed (12150)"  ~ "H3K27ac Primed",
+                             userSet == "H3K4me1.Primed (41376)"  ~ "H3K4me1 Primed")) %>% 
+  filter(userSet %in% c("H3K27me3 Primed", "H3K9me3 Naïve", "H3K27ac Primed", "H3K4me1 Primed")) %>% 
+  mutate(userSet = factor(userSet, levels = c("H3K27me3 Primed", "H3K9me3 Naïve", "H3K27ac Primed", "H3K4me1 Primed"))) %>% 
+  mutate(description = str_replace(description, "GCskew", "GC Skew"))
+
+LOLA_results_CGIs_plot <-
+ggplot(LOLA_results_CGIs, aes(oddsRatio, pValueLog, fill = oddsRatio, label = description)) +
+  geom_point(mapping = aes(size = pValueLog), shape = 21, color = "black", show.legend = T) +
+  ggrepel::geom_text_repel(data = LOLA_results_CGIs %>% group_by(userSet) %>% slice_max(order_by = oddsRatio*pValueLog, n = 7) %>% ungroup, box.padding = 1, force = T) +
+  ggrepel::geom_text_repel(data = LOLA_results_CGIs %>% filter(oddsRatio > 7), box.padding = 1, force = T) +
+  facet_wrap(~ userSet, scales = "free") +
+  theme_publication() + 
+  scale_size_continuous(range = c(0,15)) +
+  scale_fill_distiller(palette = "Reds", direction = 1) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  labs(x = "Odds ratio", y = "-Log10(P-value)", fill = "Odds ratio", size = "-Log10(P-value)")
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_3_factor1.svg", width = 10, height = 6)
+plot_features_heatmap + plot_features_boxplot + plot_features_count + patchwork::plot_layout(widths = c(1,1,1))
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_4_factor1.svg", width = 9, height = 5.5)
+enrichment_ht_1
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_5_factor1.svg", width = 6, height = 4.5)
+enrichment_ht_2
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_6_factor1.svg", width = 8, height = 4.5)
+plot_annot_perct
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_7_factor1.svg", width = 23, height = 5)
+pdf(file = "output/figures/03_condition_comparison/MOFA2_plot_7_factor1.pdf", width = 23, height = 5)
+  barplot(GOterms_results$`Methylation.Primed (26401)`)  + labs(title = "Methylation Primed") +
+  barplot(GOterms_results$`ATAC-seq.Primed (22908)`)     + labs(title = "ATAC-seq Primed") +
+  barplot(GOterms_results$`H3K9me3.Naive (13943)`)       + labs(title = "H3K9me3 Naive")
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/MOFA2_plot_8_factor1.svg", width = 8, height = 8.5)
+pdf(file = "output/figures/03_condition_comparison/MOFA2_plot_8_factor1.pdf", width = 8, height = 8.5)
+LOLA_results_CGIs_plot
+dev.off()
+
+saveRDS(plot_data, file = "output/database/MOFA2_w_methylation_plot_data.rds")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

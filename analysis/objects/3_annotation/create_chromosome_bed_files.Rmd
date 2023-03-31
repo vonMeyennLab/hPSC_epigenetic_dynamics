@@ -1,0 +1,48 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Chromosome BED files"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 11, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Create chromosome BED files for ChromHMM
+```{r}
+
+# Each Chromosome in a separate file
+for (i in c("1", "2", "3", "4", "5", "6", "7", "8", "9", "MT", "X", "Y", "10", "11", "12" , "13", "14", "15", "16", "17", "18", "19",  "20", "21", "22")) {
+   
+   read.table('genomes/Homo_sapiens/GRCh38/Ensembl/release-98/Homo_sapiens.GRCh38.dna_sm.primary_assembly.chrSize.txt') %>% 
+   dplyr::filter(V1 %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "MT", "X", "Y", "10", "11", "12" , "13", "14", "15", "16", "17", "18", "19", "20", "21", "22")) %>%
+   dplyr::rename(V3 = V2) %>% 
+   dplyr::mutate(V2 = 0) %>% 
+   dplyr::rename(chromosome = V1, start = V2, end = V3) %>% 
+   dplyr::select(chromosome, start, end) %>% subset(chromosome %in% i) %>% 
+   write.table(file = paste0("output/BED/chromosome_", i, ".bed"), quote = F, sep = "\t",  row.names = F, col.names = F)
+   
+}
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

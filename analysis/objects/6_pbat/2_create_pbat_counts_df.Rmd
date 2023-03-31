@@ -1,0 +1,127 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Convert PBAT counts to dataframe"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading methylation counts
+```{r}
+
+#######################################################
+# Loading the filtered normalized methylation data
+
+plan("multisession", workers = 10)
+
+## loading the filtered methylation results
+PBATdb_filtered_normed <-
+future_map(list.files(path       = "output/database/PBATdb_filtered_normed",
+                      pattern    = "_filtered_normed.txt.bgz$",
+                      full.names = T),
+    function(x){
+      
+      sample_ids <- x %>%
+                    str_remove("output/database/PBATdb_filtered_normed") %>%
+                    str_remove("_filtered_normed.txt.bgz")
+      
+      treatment_ids <- PBAT_metadata$group %>% 
+                       as.factor() %>% 
+                       as.numeric() %>% 
+                       .[match(sample_ids, PBAT_metadata$sample_id)]
+      
+      
+      methylKit:::readMethylRawDB(dbpath     = x,
+                                  sample.id  = sample_ids, 
+                                  dbtype     = "tabix",
+                                  assembly   = "hg38",
+                                  context    = "CpG",
+                                  resolution = "base")
+    })
+
+plan("sequential")
+#######################################################
+
+# Adding sample names to the list names
+names(PBATdb_filtered_normed) <- map(PBATdb_filtered_normed, getSampleID) %>% as.character()
+
+```
+
+# Read methylation inside genomic windows
+```{r}
+
+# List with the sample names by group
+sample_names_by_group <-
+  PBAT_metadata %>%
+  select(sample_id, group) %>%
+  named_group_split(group) %>%
+  map(~ pull(.x, sample_id) %>% as.character)
+
+# Creating a combined GRanges object with methylation data
+plan("multisession", workers = 5)
+
+PBATdb_df <-
+future_map(sample_names_by_group, function(x){
+  
+      PBATdb_filtered_normed[x] %>%
+      map(~ as(.x, "methylRaw") %>% as("GRanges") %>% as.data.frame())
+  
+   })
+
+plan("sequential")
+
+```
+
+# Converting CpG methylation dataframes into Granges objects
+```{r}
+
+PBATdb_gr <- PBATdb_df %>% map(~ map(.x, ~ as(.x, "GRanges")))
+
+```
+
+# Methylation in CpGs inside annotated regions
+```{r}
+
+genome_annotation_subset <- 
+  genome_annotation %>% .[c("CGI Promoters", "Non-CGI Promoters", "CpG islands", "Distal Naïve enhancers", "Distal Naïve super-enhancers", "Distal Primed enhancers", "Distal Primed super-enhancers", "Exons", "Introns", "Repeats", "Intergenic regions")]
+
+PBATdb_annotated_gr <- genome_annotation_subset %>% map(function(x) {PBATdb_gr %>% map(~ map(.x, ~ subsetByOverlaps(.x, x)))})
+
+```
+
+# Saving data
+```{r}
+
+# Saving methylation CpG data in dataframe
+saveRDS(PBATdb_df, file = "output/database/meth_counts_w_replicates_df.rds")
+
+# Saving methylation CpG data in GRanges object
+saveRDS(PBATdb_gr, file = "output/database/meth_counts_w_replicates_gr.rds")
+
+# Saving methylation CpG data in annotated regions
+saveRDS(PBATdb_annotated_gr, file = "output/database/meth_counts_w_replicates_annotated_gr.rds")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

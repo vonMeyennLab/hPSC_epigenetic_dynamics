@@ -1,0 +1,150 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "DNMT, TET, IDH, PcG, and TrxG family gene expression"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 31, 2023"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Load promoter data
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- unique(counts_in_promoters_full)
+
+```
+
+# Load RNA-seq counts
+```{r}
+
+load("output/database/rnaseq_counts.RData")
+
+# Generate log2 normalized counts
+RNAseq_log2_normalized_counts <- 
+  RNAseq_normalized_counts %>% 
+  as.data.frame() %>% 
+  mutate_all(.funs = ~ log2(.x + 1)) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(unique(edb_gene_attributes[, c("gene_id", "gene_name", "gene_biotype", "seqnames")]), by = "gene_id") %>% 
+  gather(sample_id, counts, -gene_id, -gene_name, -gene_biotype, -seqnames) %>% 
+  left_join(unique(RNAseq_metadata[, c("sample_id", "day", "group", "cell", "replicate")]))
+
+# Average counts by day
+RNAseq_log2_normalized_counts_by_day <- 
+  RNAseq_log2_normalized_counts %>% 
+  group_by(gene_name, day) %>% 
+  summarise(counts = mean(counts, na.rm = T)) %>%
+  ungroup %>% 
+  mutate(day = day %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+  mutate(day = factor(day, levels = c("0", "1", "2", "3", "7", "10", "20X", "20E", "H9 Primed")))
+
+```
+
+# Selected gene list
+```{r}
+
+# PcG and TrxG subgroup genes
+PcG_TrxG_gene_list <- 
+  read_csv("analysis/objects/3_annotation/PcG_TrxG/PcG_TrxG_subunits.csv") %>%
+  named_group_split(complex_subgroup) %>% 
+  map(~ pull(.x, gene_name) %>% unique)
+
+# DNMT, TET, and IDH gene family
+DNMT_TET_IDH_genes <- list(
+  "DNMT" = c("DNMT1", "DNMT3A", "DNMT3B", "DNMT3L"),
+  "TET"  = c("TET1", "TET2", "TET3", "TET1P1", "TET2-AS1"),
+  "IDH"  = c("IDH1", "IDH2", "IDH3A", "IDH3B", "IDH1-AS1", "IDH2-DT")
+  )
+
+# Combining PcG and TrxG subgroup genes with DNMT, TET, and IDH gene family
+combined_gene_list <- c(PcG_TrxG_gene_list, DNMT_TET_IDH_genes)
+
+```
+
+# Expression heatmaps
+```{r}
+
+# Heatmap colors
+heatmap_colors <- circlize::colorRamp2(seq(2, 12, 10/10), c(rev(brewer.pal(n = 11, name = "RdBu"))))
+
+# Heatmaps
+heatmap_plots <- 
+map2(combined_gene_list, names(combined_gene_list),
+  ~ RNAseq_log2_normalized_counts_by_day %>% 
+  filter(gene_name %in% .x) %>% 
+  spread(day, counts) %>% 
+  column_to_rownames("gene_name") %>% 
+  as.matrix() %>% 
+  ComplexHeatmap::Heatmap(border           = T,
+                          col              = heatmap_colors,
+                          cluster_columns  = F,
+                          row_names_side   = "left",
+                          show_row_dend    = F,
+                          column_title     = .y,
+                          name             = "Log2(normalized counts + 1)", 
+                          rect_gp          = gpar(col = "black", lwd = 0.5),
+                          column_names_rot = 60, 
+                          column_title_gp  = gpar(fontface = "bold"), 
+                          heatmap_legend_param = list(title_position = "leftcenter-rot"),
+                          )
+  )
+
+```
+
+# Saving plots
+```{r}
+
+ht_COMPASS_SWISNF_list <-  
+  heatmap_plots$COMPASS %v%
+  heatmap_plots$`MLL1/MLL2 COMPASS` %v%
+  heatmap_plots$`MLL3/MLL4 COMPASS` %v%
+  heatmap_plots$`SET1/COMPASS` %v%
+  heatmap_plots$`SWI/SNF (BAF and PBAF)`
+
+svg(filename = "output/figures/revision/ht_COMPASS_SWISNF.svg", width = 3.5, height = 10)
+draw(ht_COMPASS_SWISNF_list)
+dev.off()
+
+ht_PRC_list <-
+  heatmap_plots$PRC1 %v%
+  heatmap_plots$PRC2 %v%
+  heatmap_plots$`PR-DUB`
+
+svg(filename = "output/figures/revision/ht_PRC.svg", width = 3.5, height = 12)
+draw(ht_PRC_list)
+dev.off()
+
+ht_DNMT_TET_IDH_list <-  
+  heatmap_plots$DNMT %v%
+  heatmap_plots$TET %v%
+  heatmap_plots$IDH
+
+svg(filename = "output/figures/revision/ht_DNMT_TET_IDH.svg", width = 3.5, height = 4.5)
+draw(ht_DNMT_TET_IDH_list)
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

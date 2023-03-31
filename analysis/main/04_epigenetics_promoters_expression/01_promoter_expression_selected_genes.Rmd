@@ -1,0 +1,118 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Promoter epigenetic and gene expression dynamics in pluripotency genes"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading promoter data
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- unique(counts_in_promoters_full)
+
+```
+
+# Genes associated with development and pluripotency
+```{r}
+
+development_genes <- list(
+  "Naive pluripotency"         = c("KLF4", "KLF5",	"TFCP2L1", "DNMT3L", "FGF4", "KLF17"),
+  
+  "General pluripotency"       = c("NANOG", "POU5F1", "SALL4",	"SOX2", "TDGF1"),
+  
+  "Post-implantation epiblast" = c("ETV4", "ETV5", "MYC", "SOX11", "FZD7", "CDH2", "SALL2", "SFRP2", "ZIC2", "FGF2", "TCF7L1"),
+  
+  "Lineage markers"            = c("SOX1", "PAX6", "NEUROG1", "NEUROG2", "ASCL1", "ZIC1", "EOMES", "GATA4", "GATA6", "TBXT", "CDX2", "MEOX1", "FOXF1", "FOXA2", "SOX7", "SOX17")
+  )
+
+```
+
+# Gene expression and promoter epigenetic mark distribution in selected genes
+```{r}
+
+heatmaps_promoters_development_genes <- 
+  counts_in_promoters_full %>%
+  left_join(unique(edb_gene_attributes[, c("gene_id", "gene_name")]), by = "gene_id") %>% 
+  filter(gene_name %in% unname(unlist(development_genes))) %>%
+  filter(!group %in% c("HNES1 d3", "cR-H9-EOS d3")) %>%
+  mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+  mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+  mutate(developement_genes_group = case_when(
+    
+    gene_name %in% development_genes$`Naive pluripotency`         ~ "Naive pluripotency",
+    gene_name %in% development_genes$`General pluripotency`       ~ "General pluripotency",
+    gene_name %in% development_genes$`Post-implantation epiblast` ~ "Post-implantation epiblast",
+    gene_name %in% development_genes$`Lineage markers`            ~ "Lineage markers"
+    
+  ) %>% factor(levels = c("Naive pluripotency", "General pluripotency", "Post-implantation epiblast", "Lineage markers"))) %>% 
+  gather(seqtype, value, -gene_id, -seqnames, -CGI, -gene_biotype, -group, -gene_name, -developement_genes_group) %>%
+  arrange(developement_genes_group, CGI, dplyr::desc(gene_name)) %>% 
+  mutate(gene_name = factor(gene_name, levels = unique(gene_name))) %>%
+  named_group_split(seqtype) %>%
+  .[c("RNA-Seq", "ATAC-Seq", "H3K4me3", "H3K27ac", "H3K4me1", "H3K27me3", "H3K9me3", "Methylation")] %>%
+  map2(names(.),
+    function(x, y){
+      
+      
+      max_value <- max(x$value)
+      min_value <- min(x$value)
+      
+      ggplot(x, aes(group, gene_name, fill = value)) +
+      geom_tile(color = "black", size = 0.2) +
+      scale_fill_gradientn(colours = rev(brewer.pal(11, "RdBu"))) +
+      theme_publication() +
+      theme(axis.title.x    = element_blank(),
+            axis.title.y    = element_blank(),
+            axis.text.y     = if(y == "RNA-Seq") {element_text(hjust = 1)} else {element_blank()},
+            axis.ticks.y    = if(y == "RNA-Seq") {element_line()} else {element_blank()},
+            axis.text.x     = element_text(angle = 45, hjust = 1, vjust = 1),
+            panel.border    = element_blank(),
+            strip.text.y    = if(y == "Methylation") {element_text()} else {element_blank()},
+            legend.position = "bottom",
+            legend.box      = "horizontal",
+            legend.title    = element_text(size = 10)
+            ) +
+      labs(fill = if(y != "Methylation") {"Log2(normalized counts + 1)"} else {"Methylation percentage (%)"}) +
+      guides(fill = guide_colourbar(title.position = "top", title.hjust = 0.5, barwidth = unit(4, "cm"), barheight = unit(0.30, "cm"), frame.colour = "black", ticks.colour = "black")) +
+      facet_grid(developement_genes_group ~ seqtype, scales = "free_y", space = "free_y")
+      
+    } 
+    ) %>% cowplot::plot_grid(plotlist = ., nrow = 1, rel_widths = c(1.45, rep(1, length(.)-2), 1.15))
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_selected_genes.svg", width = 14, height = 9)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_selected_genes.pdf", width = 14, height = 9)
+heatmaps_promoters_development_genes
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

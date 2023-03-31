@@ -1,0 +1,154 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Promoter and gene expression analysis"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading promoter counts
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- unique(counts_in_promoters_full)
+
+```
+
+# RNA-seq clusters
+```{r}
+
+# Loading RNA-seq clusters
+load("output/database/rnaseq_DGE_clusters.RData")
+
+# Colors for RNA-Seq heatmap
+heatmap_colors <- circlize::colorRamp2(c(-1.5, -1, -0.5, 0, 0.5, 1, 1.5), c(rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,5,6,7,10,11)])))
+
+# RNA-Seq heatmap
+rnaseq_ht <- 
+  mfuzz_clusters %>%
+  filter(gene_id %in% unique(counts_in_promoters_full$gene_id)) %>%
+  gather(group, rnaseq, -gene_id, -CLUSTER) %>%
+  group_by(group, CLUSTER) %>% 
+  summarise(rnaseq = mean(rnaseq, na.rm = T)) %>% 
+  ungroup %>% 
+  spread(group, rnaseq) %>%  
+  arrange(CLUSTER) %>% 
+  column_to_rownames("CLUSTER") %>%
+  as.matrix() %>% 
+  .[, c("0", "10", "20X", "20E", "H9 Primed")] %>% 
+  ComplexHeatmap::Heatmap(matrix           = .,
+                          col              = rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,5,6,7,10,11)]),
+                          name             = "Log2(normalized counts + 1)",
+                          cluster_rows     = F, 
+                          show_row_names   = F, 
+                          column_names_rot = 60,
+                          cluster_columns  = F,
+                          column_title     = "RNA-Seq",
+                          rect_gp          = gpar(color = "black"),
+                          border           = T)
+
+# Colors for epigenetic modifications heatmap
+epi_modifications_colors <- circlize::colorRamp2(seq(-0.40, 0.40, 0.125), c(rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,5,6,7,10,11)])))
+methylation_colors <- circlize::colorRamp2(seq(0, 1, 0.15), c(rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,5,6,7,10,11)])))
+
+# Epigenetic modifications heatmap
+epi_modifications_ht <-
+map(c("ATAC-Seq", "H3K27ac", "H3K27me3", "H3K4me1", "H3K4me3", "H3K9me3", "Methylation") %>% set_names(.,.),
+  ~ counts_in_promoters_full %>%
+    left_join(unique(RNAseq_metadata[, c("day", "group")])) %>% 
+    mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+    mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>%
+    inner_join(unique(mfuzz_clusters[, c("gene_id", "CLUSTER")])) %>% 
+    select(c("gene_id", "day", .x, "CLUSTER")) %>%
+    group_by(day, CLUSTER) %>% 
+    summarise(!!.x := mean(!!sym(.x), na.rm = T)) %>% 
+    ungroup %>%
+    spread(day, !!sym(.x)) %>%  
+    arrange(CLUSTER) %>% 
+    column_to_rownames("CLUSTER") %>%
+    as.matrix() %>% 
+    .[, c("0", "10", "20X", "20E", "H9 Primed")] %>%
+    ComplexHeatmap::Heatmap(matrix           = .,
+                            col              = if(.x == "Methylation"){methylation_colors}else{rev(brewer.pal(n = 11, name = "RdBu")[c(2,3,5,6,7,10,11)])},
+                            name             = .x,
+                            cluster_rows     = F, 
+                            show_row_names   = F, 
+                            cluster_columns  = F, 
+                            column_names_rot = 60,
+                            column_title     = .x,
+                            rect_gp          = gpar(color = "black"),
+                            border           = T)
+    )
+
+# Combinations of RNAs-seq and epigenetic modifications heatmap
+ht_rnaseq_epi <- 
+  rnaseq_ht +
+  epi_modifications_ht$`ATAC-Seq` +
+  epi_modifications_ht$H3K4me3 + 
+  epi_modifications_ht$H3K27ac +
+  epi_modifications_ht$H3K4me1 + 
+  epi_modifications_ht$H3K27me3 + 
+  epi_modifications_ht$H3K9me3 + 
+  epi_modifications_ht$Methylation
+
+# Number of genes in each clusters
+counts_in_promoters_full %>%
+    left_join(unique(RNAseq_metadata[, c("day", "group")])) %>% 
+    mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
+    mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>%
+    inner_join(unique(mfuzz_clusters[, c("gene_id", "CLUSTER")])) %>% 
+    select(gene_id,CLUSTER, CGI) %>% 
+    unique %>% named_group_split(CLUSTER) %>% map(~ pull(.x, gene_id) %>% unique %>% length)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_1.svg", width = 17, height = 2.75)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_1.pdf", width = 17, height = 2.75)
+ht_rnaseq_epi
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_2.svg", width = 16, height = 5.5)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_2.pdf", width = 16, height = 5.5)
+enrichGO_clusters$`1` %>% barplot(showCategory = 5) +
+enrichGO_clusters$`2` %>% barplot(showCategory = 5) +
+enrichGO_clusters$`3` %>% barplot(showCategory = 5) +
+enrichGO_clusters$`4` %>% barplot(showCategory = 5) +
+enrichGO_clusters$`5` %>% barplot(showCategory = 5)
+dev.off()
+
+svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_3.svg", width = 16, height = 2.5)
+pdf(file = "output/figures/04_epigenetics_promoters_expression/promoter_expression_cluster_3.pdf", width = 16, height = 2.5)
+enrichKEGG_clusters$`3` %>% barplot(showCategory = 5) +
+enrichKEGG_clusters$`4` %>% barplot(showCategory = 5) +
+enrichKEGG_clusters$`5` %>% barplot(showCategory = 5)
+dev.off()
+
+```
+
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

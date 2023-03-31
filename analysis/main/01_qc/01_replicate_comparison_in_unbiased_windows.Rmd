@@ -1,0 +1,298 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Replicate comparison in unbiased windows"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading data
+```{r}
+
+# Loading RNA-seq read counts
+load(file = "output/database/rnaseq_counts.RData")
+
+# Loading the DGE results
+load("output/database/deseq2_results.RData")
+
+# Selecting the gene ids from the DGE results
+DGE_gene_ids <- deseq2_analysis %>% map(~ as.data.frame(.x) %>% filter(padj < 0.05) %>% filter(abs(log2FoldChange) > 2) %>% rownames %>% unique) %>% purrr::reduce(c) %>% unique
+
+```
+
+# PBAT read counts
+```{r}
+
+# Loading ChIP-seq, ATAC-seq, and PBAT read counts
+load(file = "output/database/counts_in_windows_200CpGs.RData")
+
+# Define probes index
+probes_index <- rownames(chipseq_atacseq_normalized_counts$`ATAC-Seq`)
+
+# Add probe index to row names
+rownames(PBAT_meth_ratio) <- probes_index
+
+# Excluding X and Y chromosomes
+PBAT_meth_ratio <- PBAT_meth_ratio %>% .[!str_detect(rownames(.), "X:|Y:"), ] # filter out X and Y chromosomes
+  
+# Select most variable probes
+rv <- rowVars(PBAT_meth_ratio)
+
+# Define threshold    
+rv %>% na.omit %>% tibble(rank = rank(-.), value = .) %>% filter(value > 0.05) %>% nrow
+rv %>% na.omit %>% tibble(rank = rank(-.), value = .) %>% ggplot(aes(rank, value)) + geom_vline(xintercept = 26540) + geom_hline(yintercept = 0.05) + geom_line() + theme_publication()
+
+select <- order(rv, decreasing = TRUE)[seq_len(min(26540, length(rv)))]
+
+PBAT_meth_ratio <- PBAT_meth_ratio[select,]
+
+```
+
+# Loading diffbind peaks
+```{r}
+
+# Loading diffbind peaks
+load(file = "output/database/differential_peaks_dba_analyze.RData")
+
+dba_analyze_norm_counts <- 
+map(dba_analyze, function(x){
+  
+   dba_analyze_consensus_peaks <-
+    x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$binding %>% 
+    as.data.frame() %>% 
+    left_join(tibble(CHR = 1:length(x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$chrmap), CHR_new = x$cR_H9_EOS_d0.vs.cR_H9_EOS_d10$chrmap)) %>% 
+    select(-CHR) %>% 
+    dplyr::rename(CHR = CHR_new) %>% 
+    select(CHR, everything()) %>% 
+    filter(CHR %in% c(1:22)) %>% 
+    mutate(position = paste(CHR,START,END, sep = ":"))
+  
+  deseq_position <- 
+    map(x,
+    ~ dba.report(.x) %>% 
+      as.data.frame() %>% 
+      mutate(position = paste(seqnames,start,end, sep = ":")) %>%
+      filter(seqnames %in% c(1:22)) %>%
+      filter(FDR < 0.05) %>%
+      filter(abs(Fold) > 2) %>%
+      pull(position) %>% 
+      unique
+    ) %>% 
+    purrr::reduce(c) %>%
+    unique
+  
+  dba_analyze_norm_counts <- 
+    dba_analyze_consensus_peaks %>%
+    filter(position %in% deseq_position) %>%
+    select(-CHR, -START, -END) %>%
+    .[, c(RNAseq_metadata[RNAseq_metadata$group %in% c("HNES1 d0", "cR-H9-EOS d0", "HNES1 d10", "cR-H9-EOS d10","cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS"), "sample_id", drop = T] %>% .[str_detect(., "rep3", negate = T)], "position")] %>%
+    as_tibble %>%
+    column_to_rownames("position") %>%
+    as.matrix()
+
+  return(dba_analyze_norm_counts)
+})
+
+# Log transform diffbind region counts
+dba_analyze_norm_counts <- map(dba_analyze_norm_counts, ~ log2(.x + 1))
+
+```
+
+# PCA plot
+```{r}
+
+#######################################################
+# RNA-Seq
+
+# Selecting only genes in autosomes
+genes_id_in_autosomes <- genes(txdb)[seqnames(genes(txdb)) %in% 1:22, ] %>% as.data.frame() %>% pull(gene_id) %>% unique
+
+# Generating principal component plot (PCA)
+RNAseq_pca_plot_data <-
+  pca_transformed_counts_data(
+    object     = RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ],
+    intgroup   = "group",
+    ntop       = nrow(RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ]),
+    returnData = TRUE
+  )
+
+# Generating the plots
+RNAseq_pca_plot <- 
+map(
+  
+  list("PC1 vs PC2" = c("PC1", "PC2"),
+       "PC1 vs PC3" = c("PC1", "PC3"),
+       "PC2 vs PC3" = c("PC2", "PC3")),
+  
+  ~ pca_transformed_counts_plot(pca_results_object = RNAseq_pca_plot_data,
+                                metadata           = RNAseq_metadata,
+                                PCs                = .x)) %>% cowplot::plot_grid(plotlist = ., ncol = 3)
+
+RNAseq_pca_plot <- 
+pca_transformed_counts_plot(pca_results_object = RNAseq_pca_plot_data,
+                            metadata           = RNAseq_metadata,
+                            PCs                = c("PC1", "PC2")) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  labs(title = "RNA-Seq")
+#######################################################
+
+
+#######################################################
+# ChIP-Seq
+chipseq_pca_plot_data <-
+  map(dba_analyze_norm_counts,
+  ~ pca_normalized_counts_data(
+    object     = .x %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ],
+    metadata   = RNAseq_metadata %>% select(-file) %>% filter(!day %in% c(1,2,3,7)) %>% filter(!(cell == "HNES1" & day %in% c("20X", "20E"))) %>% filter(replicate != 3) %>% column_to_rownames("sample_id"),
+    ntop       = nrow(.x %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ]),
+    returnData = TRUE
+  ))
+#######################################################
+
+
+
+#######################################################
+# Methylation
+meth_pca_plot <- 
+pca_plot_meth(object     = PBAT_meth_ratio %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ],
+              ntop       = nrow(PBAT_meth_ratio %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ]),
+              PCs        = c("PC1", "PC2")) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  labs(title = "Methylation")
+#######################################################
+
+
+
+
+#######################################################
+# All PCA plots
+pca_plots <- 
+map2(chipseq_pca_plot_data, names(chipseq_pca_plot_data),
+     ~ pca_transformed_counts_plot(pca_results_object = .x,
+                                   metadata           = RNAseq_metadata,
+                                   PCs                = c("PC1", "PC2") 
+                 ) + theme(plot.title = element_text(hjust = 0.5, face = "bold")) + labs(title = .y)) %>% 
+  list.append(RNAseq_pca_plot, meth_pca_plot) %>%
+  .[c(7, 1:6, 8)]
+
+names(pca_plots)[1] <- "RNA-Seq"
+names(pca_plots)[8] <- "Methylation"
+#######################################################
+
+```
+
+# Hierarchical Clustering
+```{r}
+
+#######################################################
+# RNA-Seq
+# Clustering using Spearman correlation
+RNAseq_hierarchical_clustering_plot_by_sample_1 <- 
+hierarchical_clustering_plot_by_sample(transf_counts    = RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ] %>% .[,str_detect(colnames(.), "_d1_|_d2_|_d3_|_d7_", negate = T)],
+                                       metadata         = RNAseq_metadata,
+                                       calculation_type = "spearman",
+                                       ntop             = +Inf)
+
+RNAseq_hierarchical_clustering_plot_by_gene_1 <- 
+hierarchical_clustering_plot_by_gene(transf_counts    = RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ] %>% .[,str_detect(colnames(.), "_d1_|_d2_|_d3_|_d7_", negate = T)],
+                                     metadata         = RNAseq_metadata,
+                                     calculation_type = "spearman",
+                                     ntop             = 50,
+                                     edb              = edb_gene_attributes)
+
+
+
+# Clustering using Euclidean distance
+RNAseq_hierarchical_clustering_plot_by_sample_2 <-
+hierarchical_clustering_plot_by_sample(transf_counts    = RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ] %>% .[,str_detect(colnames(.), "_d1_|_d2_|_d3_|_d7_", negate = T)],
+                                       metadata         = RNAseq_metadata,
+                                       calculation_type = "euclidean",
+                                       ntop             = +Inf)
+
+RNAseq_hierarchical_clustering_plot_by_gene_2 <-
+hierarchical_clustering_plot_by_gene(transf_counts    = RNAseq_transformed_counts %>% .[rownames(.) %in% genes_id_in_autosomes, ] %>% .[rownames(.) %in% DGE_gene_ids, ] %>% .[,str_detect(colnames(.), "_d1_|_d2_|_d3_|_d7_", negate = T)],
+                                     metadata         = RNAseq_metadata,
+                                     calculation_type = "euclidean",
+                                     ntop             = 50,
+                                     edb              = edb_gene_attributes)
+#######################################################
+
+
+
+#######################################################
+# ChIP-Seq
+chipseq_atacseq_hierarchical_clustering_plot_by_sample <-
+map(dba_analyze_norm_counts,
+  ~ hierarchical_clustering_plot_by_sample(
+    transf_counts    = .x %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ],
+    metadata         = RNAseq_metadata,
+    calculation_type = "euclidean",
+    ntop             = +Inf)
+)
+#######################################################
+
+#######################################################
+# Methylation
+methylation_hierarchical_clustering_plot_by_sample <-
+hierarchical_clustering_plot_by_sample(
+    transf_counts    = PBAT_meth_ratio %>% .[,str_detect(colnames(.), "d3", negate = T)] %>% .[!str_detect(rownames(.), "X:|Y:"), ],
+    metadata         = PBAT_metadata,
+    calculation_type = "euclidean",
+    ntop             = +Inf)
+#######################################################
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/01_qc/PCA_plot.svg", width = 11, height = 5.5)
+
+list(pca_plots$`RNA-Seq`, pca_plots$`ATAC-Seq`, pca_plots$H3K4me3, pca_plots$H3K27ac, pca_plots$H3K4me1, pca_plots$H3K27me3, pca_plots$H3K9me3, pca_plots$Methylation) %>% 
+patchwork::wrap_plots(ncol = 4, nrow = 2)
+
+dev.off()
+
+
+svg(filename = "output/figures/01_qc/replicate_comparison_hierarchical_clustering.svg", width = 36, height = 14)
+pdf(file = "output/figures/01_qc/replicate_comparison_hierarchical_clustering.pdf", width = 36, height = 14)
+
+list(
+  ggplotify::as.grob(RNAseq_hierarchical_clustering_plot_by_sample_2),
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$`ATAC-Seq`),
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$H3K27ac),
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$H3K4me1), 
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$H3K27me3), 
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$H3K4me3),
+  ggplotify::as.grob(chipseq_atacseq_hierarchical_clustering_plot_by_sample$H3K9me3), 
+  ggplotify::as.grob(methylation_hierarchical_clustering_plot_by_sample)
+  ) %>% 
+arrangeGrob(grobs = ., ncol = 4, nrow = 2) %>% 
+grid.draw()
+  
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

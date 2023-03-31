@@ -1,0 +1,66 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "RNA-Seq counts"
+author:   "João Pedro Agostinho de Sousa"
+date:     "January 20, 2022"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# RNA-Seq normalized and transformed counts
+```{r}
+
+# Importing gene counts
+tximport <- tximport(RNAseq_metadata$file %>% setNames(RNAseq_metadata$sample_id),
+                     type    = "salmon",
+                     tx2gene = txdf[, 2:1])
+
+stopifnot(
+all(colnames(tximport$counts) %in% RNAseq_metadata$sample_id,
+    colnames(tximport$counts) == RNAseq_metadata$sample_id)
+)
+
+# Creating DESEq2 object
+dds <-
+  DESeqDataSetFromTximport(txi     = tximport,
+                           colData = RNAseq_metadata,
+                           design  = ~ 1)
+
+# Generate transformed counts
+RNAseq_transformed_counts <- vst(dds, blind = TRUE)
+
+# Generate normalized counts
+RNAseq_normalized_counts <-
+                    DESeq2::estimateSizeFactors(dds) %>%
+                    DESeq2::counts(normalized = TRUE)
+
+```
+
+# Saving objects
+```{r}
+
+save(RNAseq_transformed_counts, RNAseq_normalized_counts, file = "output/database/rnaseq_counts.RData")
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

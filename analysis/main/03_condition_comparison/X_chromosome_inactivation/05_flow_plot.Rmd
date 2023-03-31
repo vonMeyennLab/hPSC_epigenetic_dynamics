@@ -1,0 +1,454 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "X chromosome analysis - H3K27me3 and H3K9me3 dynamics"
+author:   "João Pedro Agostinho de Sousa"
+date:     "November 16, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# ChIP-seq, ATAC-seq, and PBAT read counts
+```{r}
+
+load(file = "output/database/counts_in_windows_10Kb.RData")
+
+```
+
+# Tilling the genome
+```{r}
+
+# Getting the chromosome length
+chromosome_lenght <-
+  read_tsv("genomes/Homo_sapiens/GRCh38/Ensembl/release-98/Homo_sapiens.GRCh38.dna_sm.primary_assembly.chrSize.txt", col_names = F) %>%
+  dplyr::rename(Chromosome = X1, Length = X2)
+
+# Creating a vector of the chromosomes lengths
+chromosome_lenght_vector <-
+  chromosome_lenght$Length %>% setNames(chromosome_lenght$Chromosome)
+
+# Tilling the genome into 10Kb windows
+tilling_genome_windows_10Kb <-
+  tileGenome(chromosome_lenght_vector, tilewidth = 10000) %>% unlist
+
+# Removing windows that overlap centromeres
+tilling_genome_windows_10Kb <- subsetByOverlaps(tilling_genome_windows_10Kb, genome_annotation$Centromeres, invert = T)
+
+```
+
+# Indexes of the probes generated in SeqMonk in each chromosome
+```{r}
+
+# Index of the windows in the X chromosome
+index_Xchrom <- 
+  tilling_genome_windows_10Kb %>% 
+  .[seqnames(.) %in% "X"] %>% 
+  as.data.frame() %>% 
+  mutate(position = paste(seqnames, start, end, sep = ":")) %>% 
+  pull(position) %>% 
+  unique
+
+# Index of the windows in the autosomes
+index_autosomes <- 
+  tilling_genome_windows_10Kb %>% 
+  .[seqnames(.) %in% c(1:22)] %>% 
+  as.data.frame() %>%
+  mutate(position = paste(seqnames, start, end, sep = ":")) %>% 
+  pull(position) %>% 
+  unique
+
+```
+
+# Density plot
+```{r}
+
+# Dataframe with the epigenetic read counts inside windows
+plan("multisession", workers = 20)
+
+counts_over_probes <-
+map(list("Autosomes"    = index_autosomes,
+         "X chromosome" = index_Xchrom),  
+function(x){
+  
+  chipseq_atacseq_df <-
+  chipseq_atacseq_normalized_counts %>% future_map2(names(.),
+                                                          ~
+                                                          as.data.frame(.x) %>%
+                                                          tibble::rownames_to_column("index") %>%
+                                                          gather(sample_id, value, -index) %>%
+                                                          left_join(unique(RNAseq_metadata[, c("sample_id", "group")]), by = "sample_id") %>%
+                                                          group_by(group, index) %>%
+                                                          summarise(!!.y := mean(value, na.rm = TRUE)) %>%
+                                                          ungroup
+                                                        ) %>%
+  purrr::reduce(full_join) %>%
+  mutate_at(.vars = vars(-c("group", "index")), .funs = ~ log2(.x + 1)) %>%
+  filter(index %in% x)
+  
+  return(chipseq_atacseq_df)
+})
+
+# Data for the density plot
+density_plot_data <- 
+  counts_over_probes %>%
+  future_map2_dfr(names(.), ~ mutate(.x, chromosome = .y) %>% filter(!group %in% c("HNES1 d3", "cR-H9-EOS d3"))) %>% 
+  left_join(unique(RNAseq_metadata[, c("group", "color")]), by = "group") %>%
+  gather(seqtype, value, -index, -group, -color, -chromosome) %>%
+  filter(seqtype %in% c("H3K27me3", "H3K9me3")) %>%
+  group_by(seqtype, chromosome) %>% 
+  mutate(value = case_when(value > quantile(value, 0.995, na.rm = T) ~ quantile(value, 0.995, na.rm = T), TRUE ~ value)) %>% 
+  mutate(value = case_when(value < quantile(value, 0.005, na.rm = T) ~ quantile(value, 0.005, na.rm = T), TRUE ~ value)) %>%
+  mutate(value = value/max(value, na.rm = T)) %>% 
+  ungroup %>% 
+  mutate(group = factor(group, levels = c("cR-H9-EOS d0", "HNES1 d0", "cR-H9-EOS d3", "HNES1 d3", "cR-H9-EOS d10", "HNES1 d10", "cR-H9-EOS d20X",  "cR-H9-EOS d20E", "H9-EOS" )))
+
+plan("sequential")
+
+# Density plot of H3K27me3 and H3K9me3
+density_plot <- 
+  ggplot(data    = density_plot_data %>% 
+                   filter(! seqtype %in% "Methylation"), 
+         mapping =  aes(value, fill = color)) +
+  geom_vline(xintercept = 0.5, color = "red") +
+  geom_density(position = position_identity(), alpha = 0.8) +
+  scale_fill_identity(aes(color)) +
+  scale_x_continuous(limits = c(0, 1)) +
+  theme_publication() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(x = "Scaled log2(normalized counts + 1)",  y = "Density") +
+  facet_wrap(chromosome ~ seqtype, scales = "free_y", nrow = 2)
+
+```
+
+# Flow plot
+```{r}
+
+# Probe classification by epigenetic modification's counts
+probe_by_type <- 
+density_plot_data %>% 
+  spread(seqtype, value) %>%
+  named_group_split(chromosome) %>%
+  map(~ filter(.x, !str_detect(group, "d3")) %>% mutate(
+                   H3K9me3_cat  = case_when(H3K9me3        <= 0.5 ~ "H3K9me3.Low",   TRUE ~ "H3K9me3.High"),
+                   H3K27me3_cat = case_when(H3K27me3       <= 0.5 ~ "H3K27me3.Low",  TRUE ~ "H3K27me3.High")) %>%
+  tidyr::unite(col = "window_type", H3K9me3_cat:H3K27me3_cat) %>%
+  select(c("group", "index", "window_type"))
+  )
+
+# Data for the flow plot
+flow_plot_data_filtered <- 
+map(probe_by_type, function(x){
+    
+    main_df <-   
+    x %>%
+    spread(group, window_type) %>%
+    filter_at(.vars = vars(-"index"), .vars_predicate = any_vars(!is.na(.))) %>% 
+    gather(group, window_type, -index) %>% 
+    mutate(group = factor(group, levels = c(
+                                            "cR-H9-EOS d0",
+                                            "HNES1 d0",
+                                            "cR-H9-EOS d3",
+                                            "HNES1 d3",
+                                            "cR-H9-EOS d10",
+                                            "HNES1 d10",
+                                            "cR-H9-EOS d20X", 
+                                            "cR-H9-EOS d20E",
+                                            "H9-EOS"))) %>% 
+    group_by(window_type) %>%
+    mutate(freq_window_type = n()) %>%
+    ungroup %>%
+    mutate(cell = case_when(str_detect(group, "H9-EOS") ~ "cR-H9-EOS", TRUE ~ "HNES1")) %>% 
+    mutate(window_type = factor(window_type, levels = c(
+      "H3K9me3.Low_H3K27me3.High",
+      "H3K9me3.High_H3K27me3.High",
+      "H3K9me3.High_H3K27me3.Low",
+      "H3K9me3.Low_H3K27me3.Low"
+      
+    )))
+    
+    ctrl_HNES1_df <-     
+    main_df %>% filter(group == "H9-EOS") %>% mutate(cell = "HNES1")
+    
+    rbind(main_df, ctrl_HNES1_df)
+    
+})
+
+# Flow plot
+flow_plot <- 
+map2(flow_plot_data_filtered,
+     names(flow_plot_data_filtered),
+    function(x, y){
+                  map(x %>% named_group_split(cell),
+                       ~ ggplot(.x %>% select(-cell),
+                         aes(x        = group,
+                             stratum  = forcats::fct_rev(window_type),
+                             alluvium = index,
+                             fill     = forcats::fct_rev(window_type)),
+                             label    = forcats::fct_rev(window_type)) +
+                      scale_x_discrete(expand = c(.1, .1)) +
+                      geom_flow(show.legend   = T,
+                                color         = "black",
+                                alpha         = 0.5,
+                                min.y         = if(y == "Autosomes"){11000}else{500}
+                                ) +
+                      geom_stratum(show.legend   = T) +
+                      theme_publication() +
+                      scale_y_continuous(position = "right") +
+                      theme(panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(),
+                            panel.border     = element_blank(),
+                            axis.line.y      = element_line(),
+                            axis.ticks.x     = element_blank()) +
+                      scale_fill_manual(values = c("H3K9me3.Low_H3K27me3.Low"   = "lightgray",
+                                                   "H3K9me3.High_H3K27me3.High" = brewer.pal(n = 11, name = "RdBu")[2],
+                                                   "H3K9me3.Low_H3K27me3.High"  = brewer.pal(n = 11, name = "BrBG")[3],
+                                                   "H3K9me3.High_H3K27me3.Low"  = brewer.pal(n = 11, name = "BrBG")[9])) +
+                      labs(x = "", y = "Number of regions") +
+                      guides(fill = guide_legend(ncol = 1))) %>% cowplot::plot_grid(plotlist = ., nrow = 1)
+      }) %>%
+  cowplot::plot_grid(plotlist = ., ncol = 1)
+
+```
+
+# Enrichment over annotated regions
+```{r}
+
+# Loading LOLA Core databases
+RegionDB_LOLACore <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACore/hg38", useCache = T)
+
+# Loading LOLA custom databases
+RegionDB_custom <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACustom/hg38", useCache = F)
+
+# USERSETS 1
+userSets1 <-
+map(list(  
+"d20E_to_H9_H3K27me3_high_to_H3K9m3_high"                  = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
+"d20E_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_H3K27me3_high" = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.High"),
+"d20E_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_high"          = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
+"d20E_to_H9_H3K9me3_high_to_H3K9m3_high"                   = c("H3K9me3.High_H3K27me3.Low", "H3K9me3.High_H3K27me3.Low"),
+"d20E_to_H9_H3K27me3_high_to_Low"                          = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low"),
+"d20E_to_H9_H3K9me3_H3K27me3_high_to_Low"                  = c("H3K9me3.High_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low")),
+ ~ flow_plot_data_filtered$`X chromosome` %>% 
+  select(index, group, window_type) %>% 
+  unique %>% spread(group, window_type) %>% 
+  filter(`cR-H9-EOS d20E` == .x[[1]]) %>%
+  filter(`H9-EOS` == .x[[2]]) %>% 
+  tidyr::separate(col = "index", into = c("chr", "start", "end")) %>%
+  makeGRangesFromDataFrame()
+) 
+
+# USERSETS 2
+userSets2 <-
+map(list(  
+"d0_to_d10_H3K9me3_high_to_H3K9m3_high"                   = c("H3K9me3.High_H3K27me3.Low", "H3K9me3.High_H3K27me3.Low"),
+"d0_to_d10_H3K9me3_H3K27me3_high_to_H3K9m3_high"          = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
+"d0_to_d10_H3K9me3_H3K27me3_high_to_H3K9m3_H3K27me3_high" = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.High"),
+"d0_to_d10_Low_to_H3K9m3_high"                            = c("H3K9me3.Low_H3K27me3.Low", "H3K9me3.High_H3K27me3.Low"),
+"d0_to_d10_H3K9me3_high_to_H3K9m3_H3K27me3_high"          = c("H3K9me3.High_H3K27me3.Low", "H3K9me3.High_H3K27me3.High")),
+ ~ flow_plot_data_filtered$`X chromosome` %>% 
+  select(index, group, window_type) %>% 
+  unique %>% spread(group, window_type) %>% 
+  filter(`cR-H9-EOS d0` == .x[[1]]) %>%
+  filter(`cR-H9-EOS d10` == .x[[2]]) %>% 
+  tidyr::separate(col = "index", into = c("chr", "start", "end")) %>%
+  makeGRangesFromDataFrame()
+)
+
+# USERSETS
+userSets <- GRangesList(c(userSets1, userSets2))
+
+# UNIVERSE
+universeSets <- 
+  flow_plot_data_filtered$`X chromosome` %>% 
+  tidyr::separate(col = "index", into = c("chr", "start", "end")) %>%
+  makeGRangesFromDataFrame() %>% 
+  unique
+
+LOLAcustom_results <- runLOLA(userSets, universeSets, RegionDB_custom, cores = 20, direction = "enrichment")
+
+seqlevelsStyle(userSets) <- "UCSC"
+seqlevelsStyle(universeSets) <- "UCSC"
+LOLACore_results <- runLOLA(userSets, universeSets, RegionDB_LOLACore, cores = 20, direction = "enrichment")
+
+```
+
+# Fold enrichment heatmap (Genome annotation)
+```{r}
+
+# Enrichment heatmap
+enrichment_data <- 
+  rbind(LOLAcustom_results, LOLACore_results) %>%
+  filter(collection %in% c("genome_annotation", "genome_annotation", "ucsc_features", "repeats", "chromosomes")) %>%
+  mutate(collection = case_when(
+         collection == "genome_annotation" & str_detect(description, "enhancer") ~ "Enhancers",
+         collection == "genome_annotation" & str_detect(description, "Promoter") ~ "Promoters",
+         collection == "genome_annotation" & str_detect(description, "CpG|CGI")  ~ "CpG islands",
+         TRUE ~ collection)) %>% 
+  mutate(collection = 
+           str_replace(collection, "repeats", "Repeats") %>%
+           str_replace("genome_annotation", "Genome annotation") %>%
+           str_replace("ucsc_features", "UCSC features") %>%
+           str_replace("chromosomes", "Chromosomes")) %>%
+  mutate(collection = factor(collection, levels = c("Genome annotation", "CpG islands", "Promoters", "Enhancers", "UCSC features", "Repeats", "Chromosomes", "codex", "encode_tfbs"))) %>% 
+  filter(!str_detect(description, "TSS|CDS|bodies")) %>%
+  mutate(description = str_replace(description, "chromosome", "Chromosome")) %>%
+  mutate(description = str_replace(description, "CGI inter", "Outside CGIs")) %>%
+  mutate(description = str_replace(description, "\\_\\(.*", "")) %>%
+  filter(qValue < 0.05) %>%
+  filter(pValueLog > 20) %>%
+  group_by(userSet, collection, description) %>% 
+           summarize(pValueLog = mean(pValueLog), oddsRatio = mean(oddsRatio), qValue = mean(qValue)) %>% 
+           ungroup %>% 
+  arrange(collection, userSet, pValueLog, oddsRatio) %>% 
+  mutate(description = factor(description, levels = unique(description))) %>% 
+  ungroup
+
+# Fold enrichment pvalue
+enrichment_data_pvalue_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
+  filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
+  filter(collection != "Repeats") %>%
+  select(-oddsRatio, -qValue, -collection) %>% 
+  arrange(dplyr::desc(pValueLog)) %>%
+  spread(description, pValueLog) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# Fold enrichment oddsRatio
+enrichment_data_oddsRatio_1 <- 
+  enrichment_data %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
+  filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
+  mutate(oddsRatio = log2(oddsRatio)) %>% 
+  filter(collection != "Repeats") %>% 
+  select(-pValueLog, -qValue, -collection) %>% 
+  arrange(dplyr::desc(oddsRatio)) %>% 
+  spread(description, oddsRatio) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# color function
+col_fun <- circlize::colorRamp2(c(0,0.5,2.5,5), colors = c("lightblue", "white", "red", "darkred"))
+
+enrichment_ht_1 <- 
+ComplexHeatmap::Heatmap(matrix            = enrichment_data_pvalue_1, 
+                        name              = "Log2(odds ratio)",
+                        col               = col_fun,
+                        cluster_rows      = F,
+                        row_names_side    = "left",
+                        cluster_columns   = T,
+                        column_names_rot  = 45,
+                        border            = "black", 
+                        rect_gp           = gpar(col = "gray", fill = NA),
+                        cell_fun          = function(j, i, x, y, width, height, fill) {
+                          grid.circle(x   = x, 
+                                      y   = y, 
+                                      r   = log(enrichment_data_pvalue_1[i, j])/150,
+                                      gp  = gpar(fill = col_fun(enrichment_data_oddsRatio_1[i, j]), col = "black"))
+                          })
+
+```
+
+# Enrichment heatmap (Repeats)
+```{r}
+
+# Fold enrichment pvalue
+enrichment_data_pvalue_2 <- 
+  enrichment_data %>% 
+  filter(collection == "Repeats") %>%
+  select(-oddsRatio, -qValue, -collection) %>% 
+  arrange(dplyr::desc(pValueLog)) %>%
+  spread(description, pValueLog) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# Fold enrichment oddsRatio
+enrichment_data_oddsRatio_2 <- 
+  enrichment_data %>%
+  mutate(oddsRatio = log2(oddsRatio)) %>% 
+  filter(collection == "Repeats") %>% 
+  select(-pValueLog, -qValue, -collection) %>% 
+  arrange(dplyr::desc(oddsRatio)) %>% 
+  spread(description, oddsRatio) %>% 
+  arrange(dplyr::desc(userSet)) %>% 
+  column_to_rownames("userSet") %>% 
+  mutate_all(.funs = ~ replace_na(.x, 0)) %>% 
+  as.matrix()
+
+# color function
+col_fun <- circlize::colorRamp2(c(0,0.5,2.5,5), colors = c("lightblue", "white", "red", "darkred"))
+
+enrichment_ht_2 <- 
+ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2, 
+                        name             = "Log2(odds ratio)",
+                        col              = col_fun,
+                        cluster_rows     = F,
+                        cluster_columns  = T,
+                        column_names_rot = 45,
+                        border           = "black", 
+                        rect_gp          = gpar(col = "gray", fill = NA),
+                        cell_fun         = function(j, i, x, y, width, height, fill) {
+                          grid.circle(x  = x, 
+                                      y  = y, 
+                                      r  = log(enrichment_data_pvalue_2[i, j])/100,
+                                      gp = gpar(fill = col_fun(enrichment_data_oddsRatio_2[i, j]), col = "black"))
+                          })
+
+```
+
+# Saving results
+```{r}
+
+# Saving probe data
+save(probe_by_type, file = "output/database/Xchrom_probe_by_type.RData")
+
+# Saving density plot
+svg(filename = "output/figures/03_condition_comparison/XChrom_density_plot.svg", width = 6, height = 5)
+#pdf(file = "output/figures/03_condition_comparison/XChrom_density_plot.pdf", width = 6, height = 5)
+density_plot
+dev.off()
+
+# Saving flow plot
+svg(filename = "output/figures/03_condition_comparison/XChrom_flow_plot.svg", width = 12, height = 9)
+#pdf(file = "output/figures/03_condition_comparison/XChrom_flow_plot.pdf", width = 12, height = 9)
+flow_plot
+dev.off()
+
+# Saving enrichment plots
+svg(filename = "output/figures/03_condition_comparison/XChrom_enrich_plot_1.svg", width = 9, height = 4.5)
+enrichment_ht_1
+dev.off()
+
+svg(filename = "output/figures/03_condition_comparison/XChrom_enrich_plot_2.svg", width = 6, height = 4)
+enrichment_ht_2
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+devtools::session_info()
+```
+
+This document was processed on: `r Sys.Date()`.

@@ -1,0 +1,73 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Counts in annotated regions"
+author:   "João Pedro Agostinho de Sousa"
+date:     "October 22, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Chosing the annotations
+```{r}
+
+region_gr <- genome_annotation$Repeats
+
+```
+
+# ChIP-Seq and ATAC-Seq counts inside genomic regions
+```{r}
+
+# Dataset names
+chipseq_atacseq_dataset_names <- 
+list.files("data/results/nf-core_results/") %>% .[str_detect(., "chipseq|atacseq")]
+
+# read counts over regions
+chipseq_atacseq_reads <-
+map(chipseq_atacseq_dataset_names,
+
+~ chipseq_region_counts(bamFiles = list.files(paste0("data/results/nf-core_results/", .x, "/bwa/mergedLibrary"), full.names = TRUE, pattern = 'bam$'), 
+                        gr_object = region_gr)) %>%
+  set_names(chipseq_atacseq_dataset_names %>% str_replace("chipseq_", "") %>% str_replace("atacseq", "ATAC-Seq"))
+
+# Removing input samples
+chipseq_atacseq_reads <- map(chipseq_atacseq_reads, ~ .x %>% .[, !colnames(.) %in% "INPUT_rep1"])
+
+# convert counts into normalized
+chipseq_atacseq_normalized_counts <-
+                                  map(chipseq_atacseq_reads,
+                                  ~ chipseq_normalized_counts(ReadCounts = .x,
+                                                              Metadata   = RNAseq_metadata)
+                                  )
+
+```
+
+# Saving counts results
+```{r}
+
+save(
+chipseq_atacseq_normalized_counts,
+file = paste0("output/database/chipseq_atacseq_counts_in_", "repeats", ".RData"))
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.
