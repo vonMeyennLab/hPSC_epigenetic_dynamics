@@ -92,6 +92,60 @@ list(
 
 ```
 
+# Parameters
+```{r}
+
+adjusted_pvalue  <- 0.001
+log2_fold_change <- 2.5
+
+```
+
+# DEG gene ontology
+```{r}
+
+DEGenes <- 
+map2(deseq2_analysis, names(deseq2_analysis),
+      ~ .x %>%
+        .[is.finite(.$padj), ] %>%
+        .[.$padj < adjusted_pvalue, ] %>%
+        .[abs(.$log2FoldChange) > log2_fold_change, ] %>% 
+        as.data.frame() %>% 
+        mutate(condition_comparison = .y) %>% 
+        rownames_to_column("gene_id") %>% 
+        left_join(unique(edb_gene_attributes[, c("gene_id", "gene_name")]), by = "gene_id") %>% 
+        select(condition_comparison, gene_name, gene_id, everything())
+  )
+
+DEGenes_w_direction <-
+  map(DEGenes,
+    ~ .x %>%
+    mutate(direction = case_when(log2FoldChange < 0 ~ "negative", 
+                                 log2FoldChange > 0 ~ "positive", 
+                                 TRUE               ~ "neutral")) %>%
+    named_group_split(direction)
+    ) %>% unlist(recursive = F)
+
+enrichGO_DEGenes <-
+  map(DEGenes_w_direction,  
+  function(x){
+  
+  enrichGO_results <-
+  enrichGO(gene        = unique(x$gene_id),
+         universe      = rownames(tximport$counts) %>% unique,
+         keyType       = "ENSEMBL",
+         OrgDb         = org.Hs.eg.db,
+         ont           = "ALL",
+         pAdjustMethod = "BH",
+         qvalueCutoff  = 0.1,
+         readable      = TRUE
+         )
+  
+  try(clusterProfiler::simplify(enrichGO_results, cutoff = 0.7, by = "p.adjust", select_fun = min))
+
+  })
+
+```
+
 # Saving results
 ```{r}
 

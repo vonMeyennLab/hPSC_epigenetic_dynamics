@@ -43,7 +43,7 @@ load("output/database/chipseq_atacseq_peaks.RData")
 
 macs_peaks_gr_in_autosomes <- macs_peaks_gr %>% .[seqnames(.) %in% 1:22]
 
-TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22]
+TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% .[.$gene_biotype != "protein_coding"]
 
 ```
 
@@ -128,12 +128,17 @@ peaks_in_TSS_by_category <-
   ~ .x %>% 
   mutate(promoter_category = case_when(
   
-  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27me3", negate = T) ~ "H3K4me3",
-  str_detect(promoter_type, "H3K4me3", negate = T) & str_detect(promoter_type, "H3K27me3") ~ "H3K27me3",
-  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27me3")             ~ "Bivalent",
+  str_detect(promoter_type, "H3K4me3", negate = T) & str_detect(promoter_type, "H3K27ac", negate = T) & str_detect(promoter_type, "H3K27me3") ~ "H3K27me3",
+  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27ac", negate = T) & str_detect(promoter_type, "H3K27me3", negate = T) ~ "H3K4me3",
+  str_detect(promoter_type, "H3K4me3", negate = T) & str_detect(promoter_type, "H3K27ac") & str_detect(promoter_type, "H3K27me3", negate = T) ~ "H3K27ac",
+  str_detect(promoter_type, "H3K27ac") & str_detect(promoter_type, "H3K27me3") & str_detect(promoter_type, "H3K27ac") ~ "Bivalent + H3K27ac",
+  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27me3") & str_detect(promoter_type, "H3K27ac", negate = T) ~ "Bivalent",
+  str_detect(promoter_type, "H3K4me3") & str_detect(promoter_type, "H3K27ac") & str_detect(promoter_type, "H3K27me3", negate = T)  ~ "H3K4me3 + H3K27ac",
   TRUE ~ "Other"
   
-  ) %>% factor(levels = c("H3K4me3", "Bivalent", "H3K27me3", "Other")))
+  ) %>%
+  factor(levels = c("H3K4me3", "H3K27ac", "H3K4me3 + H3K27ac", "Bivalent", "Bivalent + H3K27ac", "H3K27me3", "Other"))) %>% 
+  filter(promoter_category != "Other")
 )
 
 # Count of the number of promoters with the previously defined category
@@ -151,7 +156,7 @@ map(
     ) %>%
   purrr::reduce(rbind) %>%
     mutate(group             = factor(group,             levels = c("HNES1 d0", "cR-H9-EOS d0", "HNES1 d10", "cR-H9-EOS d10", "cR-H9-EOS d20X", "cR-H9-EOS d20E", "H9-EOS")),
-           promoter_category = factor(promoter_category, levels = c("Bivalent", "H3K27me3", "H3K4me3", "Other")))
+           promoter_category = factor(promoter_category, levels = c("H3K4me3", "H3K27ac", "H3K4me3 + H3K27ac", "Bivalent", "Bivalent + H3K27ac", "H3K27me3", "Other")))
 )
 
 # Data for the flow plot
@@ -192,7 +197,6 @@ map2(names(.),
   purrr::reduce(rbind) %>%
   named_group_split(cell)
 
-
 # Changing group names
 flow_plot_data_filtered <- 
 map(flow_plot_data_filtered, function(x){
@@ -212,7 +216,7 @@ map(TSS_category_summary_data, function(x){
 bivalent_promoters_flow_plot <- 
 map2(flow_plot_data_filtered,
      names(flow_plot_data_filtered),
-~ ggplot(.x %>% mutate(promoter_category = factor(promoter_category, levels = c("H3K4me3", "Bivalent", "H3K27me3", "Other"))),
+~ ggplot(.x %>% mutate(promoter_category = factor(promoter_category, levels = c("H3K4me3", "H3K27ac", "H3K4me3 + H3K27ac", "Bivalent", "Bivalent + H3K27ac", "H3K27me3", "Other"))),
        aes(x        = group,
            stratum  = forcats::fct_rev(promoter_category),
            alluvium = gene_id,
@@ -222,9 +226,9 @@ map2(flow_plot_data_filtered,
     geom_flow(show.legend   = T,
               color         = "black",
               alpha         = 0.75,
-              min.y         = 100
+              min.y         = 200, 
               ) +
-    geom_stratum(show.legend   = T) +
+    geom_stratum(show.legend = T) +
     geom_text(data = TSS_category_summary_data[[.y]], mapping = aes(x = group, y = promoter_category_count, label = promoter_category_count), inherit.aes = F, position = position_stack(vjust = 0.5)) +
     theme_publication() +
     theme(panel.grid.major = element_blank(),
@@ -234,150 +238,277 @@ map2(flow_plot_data_filtered,
           axis.ticks.x     = element_blank()) +
     scale_y_continuous(position = "right") +
     labs(x = "", y = "Number of promoters") +
-    scale_fill_manual(values = c("H3K4me3"     = brewer.pal(n = 11, name = "RdBu")[3],
-                                 "H3K27me3"    = brewer.pal(n = 11, name = "RdBu")[9],
-                                 "Bivalent"    = brewer.pal(n = 8, name = "Set2")[6],
-                                 "Other"    = "lightgray")
-                                 ) +
+    scale_fill_manual(values = c("H3K4me3" = "#B2182B", "H3K27ac" = "#084081", "H3K27me3" = "#CCEBC5", "Bivalent" = "#00441B", "Bivalent + H3K27ac" = "#238B45", "H3K4me3 + H3K27ac" = "#FEC44F"), na.value = "darkgray") +
     guides(fill = guide_legend(ncol = 1))
 )
 
 ```
 
-# Gene ontology
+# Gene ontology (cR-H9)
 ```{r}
 
-bivalent_d0_gene_ids <-
+# H3K4me3 + H3K27ac (d0) ---> H3K4me3 (d10)
+change_1_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
        ~ select(.x, gene_id, promoter_category) %>% 
          dplyr::rename(!!.y := promoter_category)) %>%
   purrr::reduce(left_join) %>%
   select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
-  filter_at(.vars = vars(c("HNES1 d0", "cR-H9-EOS d0")), all_vars(. == "Bivalent")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3")) %>%
   pull(gene_id) %>% 
   unique
 
-bivalent_d10_gene_ids <-
+# H3K4me3 + H3K27ac (d0) ---> H3K4me3 + H3K27ac (d10)
+change_2_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
        ~ select(.x, gene_id, promoter_category) %>% 
          dplyr::rename(!!.y := promoter_category)) %>%
   purrr::reduce(left_join) %>%
   select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
-  filter_at(.vars = vars(c("HNES1 d10", "cR-H9-EOS d10")), all_vars(. == "Bivalent")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
   pull(gene_id) %>% 
   unique
 
-bivalent_H9EOS_gene_ids <-
+# H3K4me3 + H3K27ac (d0) ---> Bivalent + H3K27ac (d10)
+change_3_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
        ~ select(.x, gene_id, promoter_category) %>% 
          dplyr::rename(!!.y := promoter_category)) %>%
   purrr::reduce(left_join) %>%
   select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
-  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "Bivalent")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "Bivalent + H3K27ac")) %>%
   pull(gene_id) %>% 
   unique
 
-bivalent_gene_ids <- 
+# H3K4me3 (d0) ---> H3K4me3 (d10)
+change_4_gene_ids <-
   peaks_in_TSS_by_category %>%
-  map2(names(.), ~ select(.x, gene_id, promoter_category) %>% dplyr::rename(!!.y := promoter_category)) %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
   purrr::reduce(left_join) %>%
   select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
-  filter_at(.vars = vars(!contains("gene_id")), all_vars(. == "Bivalent")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d0")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3")) %>%
   pull(gene_id) %>% 
   unique
 
-enrichGO_bivalent <- 
-enrichGO(gene          = bivalent_gene_ids,
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+# H3K4me3 (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+change_5_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
 
-enrichGO_d0 <- 
-enrichGO(gene          = bivalent_d0_gene_ids,
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+# H3K4me3 (d10) ---> H3K4me3 (H9 Primed)
+change_6_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3")) %>%
+  pull(gene_id) %>% 
+  unique
 
-enrichGO_d10 <- 
-enrichGO(gene          = bivalent_d10_gene_ids,
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+# H3K4me3 + H3K27ac (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+change_7_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("cR-H9-EOS d10")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
 
-enrichGO_H9EOS <- 
-enrichGO(gene          = bivalent_H9EOS_gene_ids,
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+GO_cRH9 <-
+  compareCluster(list("change_1" = change_1_gene_ids, 
+                      "change_2" = change_2_gene_ids,
+                      "change_3" = change_3_gene_ids,
+                      "change_4" = change_4_gene_ids,
+                      "change_5" = change_5_gene_ids,
+                      "change_6" = change_6_gene_ids,
+                      "change_7" = change_7_gene_ids), 
+                 fun           = "enrichGO", 
+                 OrgDb         = "org.Hs.eg.db",
+                 keyType       = 'ENSEMBL',
+                 ont           = "BP",
+                 pAdjustMethod = "BH",
+                 qvalueCutoff  = 0.1,
+                 pvalueCutoff  = 0.1)
 
-enrichGO_d0_to_d10 <- 
-enrichGO(gene          = unique(setdiff(bivalent_d10_gene_ids, bivalent_d0_gene_ids)),
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+GO_cRH9_plot <-
+  clusterProfiler::dotplot(GO_cRH9, group = FALSE, showCategory = 3) +
+  scale_color_distiller(palette = "Reds", direction = 1) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50)) +
+  labs(color = "Adj. p-value", size = "Gene ratio") +
+  theme(panel.grid.major = element_line(linetype = 2)) +
+  scale_color_gradient(low = "#f75656", high = "#6b1313") +
+  theme(axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45))
 
-enrichGO_d10_to_H9EOS <- 
-enrichGO(gene          = unique(setdiff(bivalent_H9EOS_gene_ids, bivalent_d10_gene_ids) %>% setdiff(bivalent_d0_gene_ids)),
-         universe      = genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% as.data.frame() %>% pull(gene_id) %>% unique,
-         keyType       = "ENSEMBL",
-         OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
-         pAdjustMethod = "BH",
-         qvalueCutoff  = 0.05,
-         readable      = TRUE
-         ) %>%
-  clusterProfiler::simplify(cutoff = 0.7, by = "p.adjust", select_fun = min)
+```
+
+# Gene ontology (HNES1)
+```{r}
+
+# H3K4me3 + H3K27ac (d0) ---> H3K4me3 (d10)
+change_1_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 + H3K27ac (d0) ---> H3K4me3 + H3K27ac (d10)
+change_2_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 + H3K27ac (d0) ---> Bivalent + H3K27ac (d10)
+change_3_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d0")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "Bivalent + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 (d0) ---> H3K4me3 (d10)
+change_4_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d0")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+change_5_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 (d10) ---> H3K4me3 (H9 Primed)
+change_6_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3")) %>%
+  pull(gene_id) %>% 
+  unique
+
+# H3K4me3 + H3K27ac (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+change_7_gene_ids <-
+  peaks_in_TSS_by_category %>%
+  map2(names(.), 
+       ~ select(.x, gene_id, promoter_category) %>% 
+         dplyr::rename(!!.y := promoter_category)) %>%
+  purrr::reduce(left_join) %>%
+  select(-c("HNES1 d3", "cR-H9-EOS d3")) %>% 
+  filter_at(.vars = vars(c("HNES1 d10")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  filter_at(.vars = vars(c("H9-EOS")), all_vars(. == "H3K4me3 + H3K27ac")) %>%
+  pull(gene_id) %>% 
+  unique
+
+GO_HNES1 <-
+  compareCluster(list("change_1" = change_1_gene_ids, 
+                      "change_2" = change_2_gene_ids,
+                      "change_3" = change_3_gene_ids,
+                      "change_4" = change_4_gene_ids,
+                      "change_5" = change_5_gene_ids,
+                      "change_6" = change_6_gene_ids,
+                      "change_7" = change_7_gene_ids), 
+                 fun           = "enrichGO", 
+                 OrgDb         = "org.Hs.eg.db",
+                 keyType       = 'ENSEMBL',
+                 ont           = "BP",
+                 pAdjustMethod = "BH",
+                 qvalueCutoff  = 0.1,
+                 pvalueCutoff  = 0.1)
+
+GO_HNES1_plot <-
+  clusterProfiler::dotplot(GO_HNES1, group = FALSE, showCategory = 3) +
+  scale_color_distiller(palette = "Reds", direction = 1) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50)) +
+  labs(color = "Adj. p-value", size = "Gene ratio") +
+  theme(panel.grid.major = element_line(linetype = 2)) +
+  scale_color_gradient(low = "#f75656", high = "#6b1313") +
+  theme(axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45))
 
 ```
 
 # Saving plots
 ```{r}
 
-svg(filename = "output/figures/03_condition_comparison/bivalency_1.svg", width = 12, height = 7)
+svg(filename = "output/figures/revision/bivalency_1.svg", width = 7, height = 6)
 bivalent_promoters_flow_plot$`cR-H9-EOS`
 dev.off()
 
-svg(filename = "output/figures/03_condition_comparison/bivalency_2.svg", width = 12, height = 7)
+svg(filename = "output/figures/revision/bivalency_2.svg", width = 4, height = 6)
 bivalent_promoters_flow_plot$HNES1
 dev.off()
 
-svg(filename = "output/figures/03_condition_comparison/bivalency_3.svg", width = 7.5, height = 5)
-pdf(file = "output/figures/03_condition_comparison/bivalency_3.pdf", width = 7.5, height = 5)
-barplot(enrichGO_bivalent, showCategory = 10) + labs(x = "Number of genes") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+svg(filename = "output/figures/revision/bivalency_3.svg", width = 6.5, height = 4.5)
+pdf(file = "output/figures/revision/bivalency_3.pdf", width = 6.5, height = 4.5)
+GO_cRH9_plot
 dev.off()
+
+svg(filename = "output/figures/revision/bivalency_4.svg", width = 6.75, height = 5.5)
+pdf(file = "output/figures/revision/bivalency_4.pdf", width = 6.75, height = 5.5)
+GO_HNES1_plot
+dev.off()
+
+GO_cRH9 %>% as.data.frame() %>% mutate(Cluster = str_replace(Cluster, "change_", "Group ")) %>% write_tsv("output/tables/flow_chart_GO_cR-H9.txt")
+GO_HNES1 %>% as.data.frame() %>% mutate(Cluster = str_replace(Cluster, "change_", "Group ")) %>% write_tsv("output/tables/flow_chart_GO_HNES1.txt")
 
 ```
 

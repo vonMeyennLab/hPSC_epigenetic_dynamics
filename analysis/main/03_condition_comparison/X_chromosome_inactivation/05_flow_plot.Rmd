@@ -171,11 +171,10 @@ map(probe_by_type, function(x){
     ungroup %>%
     mutate(cell = case_when(str_detect(group, "H9-EOS") ~ "cR-H9-EOS", TRUE ~ "HNES1")) %>% 
     mutate(window_type = factor(window_type, levels = c(
-      "H3K9me3.Low_H3K27me3.High",
-      "H3K9me3.High_H3K27me3.High",
+      "H3K9me3.Low_H3K27me3.Low",
       "H3K9me3.High_H3K27me3.Low",
-      "H3K9me3.Low_H3K27me3.Low"
-      
+      "H3K9me3.High_H3K27me3.High",
+      "H3K9me3.Low_H3K27me3.High"
     )))
     
     ctrl_HNES1_df <-     
@@ -190,7 +189,7 @@ flow_plot <-
 map2(flow_plot_data_filtered,
      names(flow_plot_data_filtered),
     function(x, y){
-                  map(x %>% named_group_split(cell),
+                  map(x %>% filter(group %in% c("cR-H9-EOS d0", "HNES1 d0", "cR-H9-EOS d10", "HNES1 d10", "cR-H9-EOS d20X",  "cR-H9-EOS d20E", "H9-EOS")) %>% named_group_split(cell),
                        ~ ggplot(.x %>% select(-cell),
                          aes(x        = group,
                              stratum  = forcats::fct_rev(window_type),
@@ -211,10 +210,10 @@ map2(flow_plot_data_filtered,
                             panel.border     = element_blank(),
                             axis.line.y      = element_line(),
                             axis.ticks.x     = element_blank()) +
-                      scale_fill_manual(values = c("H3K9me3.Low_H3K27me3.Low"   = "lightgray",
-                                                   "H3K9me3.High_H3K27me3.High" = brewer.pal(n = 11, name = "RdBu")[2],
-                                                   "H3K9me3.Low_H3K27me3.High"  = brewer.pal(n = 11, name = "BrBG")[3],
-                                                   "H3K9me3.High_H3K27me3.Low"  = brewer.pal(n = 11, name = "BrBG")[9])) +
+                      scale_fill_manual(values = c("H3K9me3.Low_H3K27me3.Low"   = "darkgray",
+                                                   "H3K9me3.High_H3K27me3.High" = "#F4A582",
+                                                   "H3K9me3.Low_H3K27me3.High"  = "#CCEBC5",
+                                                   "H3K9me3.High_H3K27me3.Low"  = "#01665E")) +  
                       labs(x = "", y = "Number of regions") +
                       guides(fill = guide_legend(ncol = 1))) %>% cowplot::plot_grid(plotlist = ., nrow = 1)
       }) %>%
@@ -225,6 +224,9 @@ map2(flow_plot_data_filtered,
 # Enrichment over annotated regions
 ```{r}
 
+save(flow_plot_data_filtered, file = "output/database/flow_plot_data_filtered.RData")
+load("output/database/flow_plot_data_filtered.RData")
+
 # Loading LOLA Core databases
 RegionDB_LOLACore <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACore/hg38", useCache = T)
 
@@ -234,16 +236,16 @@ RegionDB_custom <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACustom/hg
 # USERSETS 1
 userSets1 <-
 map(list(  
-"d20E_to_H9_H3K27me3_high_to_H3K9m3_high"                  = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
-"d20E_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_H3K27me3_high" = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.High"),
-"d20E_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_high"          = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
-"d20E_to_H9_H3K9me3_high_to_H3K9m3_high"                   = c("H3K9me3.High_H3K27me3.Low", "H3K9me3.High_H3K27me3.Low"),
-"d20E_to_H9_H3K27me3_high_to_Low"                          = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low"),
-"d20E_to_H9_H3K9me3_H3K27me3_high_to_Low"                  = c("H3K9me3.High_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low")),
+"d10_to_H9_H3K27me3_high_to_H3K9m3_high"                  = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
+"d10_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_H3K27me3_high" = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.High"),
+"d10_to_H9_H3K9me3_H3K27me3_high_to_H3K9m3_high"          = c("H3K9me3.High_H3K27me3.High", "H3K9me3.High_H3K27me3.Low"),
+"d10_to_H9_H3K9me3_high_to_H3K9m3_high"                   = c("H3K9me3.High_H3K27me3.Low", "H3K9me3.High_H3K27me3.Low"),
+"d10_to_H9_H3K27me3_high_to_Low"                          = c("H3K9me3.Low_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low"),
+"d10_to_H9_H3K9me3_H3K27me3_high_to_Low"                  = c("H3K9me3.High_H3K27me3.High", "H3K9me3.Low_H3K27me3.Low")),
  ~ flow_plot_data_filtered$`X chromosome` %>% 
   select(index, group, window_type) %>% 
   unique %>% spread(group, window_type) %>% 
-  filter(`cR-H9-EOS d20E` == .x[[1]]) %>%
+  filter(`cR-H9-EOS d10` == .x[[1]]) %>%
   filter(`H9-EOS` == .x[[2]]) %>% 
   tidyr::separate(col = "index", into = c("chr", "start", "end")) %>%
   makeGRangesFromDataFrame()
@@ -276,11 +278,11 @@ universeSets <-
   makeGRangesFromDataFrame() %>% 
   unique
 
-LOLAcustom_results <- runLOLA(userSets, universeSets, RegionDB_custom, cores = 20, direction = "enrichment")
+LOLAcustom_results <- runLOLA(userSets, universeSets, RegionDB_custom, direction = "enrichment")
 
 seqlevelsStyle(userSets) <- "UCSC"
 seqlevelsStyle(universeSets) <- "UCSC"
-LOLACore_results <- runLOLA(userSets, universeSets, RegionDB_LOLACore, cores = 20, direction = "enrichment")
+LOLACore_results <- runLOLA(userSets, universeSets, RegionDB_LOLACore, direction = "enrichment")
 
 ```
 
@@ -306,8 +308,8 @@ enrichment_data <-
   mutate(description = str_replace(description, "chromosome", "Chromosome")) %>%
   mutate(description = str_replace(description, "CGI inter", "Outside CGIs")) %>%
   mutate(description = str_replace(description, "\\_\\(.*", "")) %>%
-  filter(qValue < 0.05) %>%
-  filter(pValueLog > 20) %>%
+  filter(qValue < 0.05 & abs(oddsRatio) > 2) %>%
+  filter(pValueLog > 10) %>%
   group_by(userSet, collection, description) %>% 
            summarize(pValueLog = mean(pValueLog), oddsRatio = mean(oddsRatio), qValue = mean(qValue)) %>% 
            ungroup %>% 
@@ -318,7 +320,7 @@ enrichment_data <-
 # Fold enrichment pvalue
 enrichment_data_pvalue_1 <- 
   enrichment_data %>% 
-  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>%
   filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
   filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
   filter(collection != "Repeats") %>%
@@ -333,7 +335,7 @@ enrichment_data_pvalue_1 <-
 # Fold enrichment oddsRatio
 enrichment_data_oddsRatio_1 <- 
   enrichment_data %>% 
-  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>% 
+  filter(!str_detect(description, "Bivalent|Chromosome \\d|Chromosome Y|ZNF|lncRNAs|imprints|Centromeres|^Promoters$|FANTOM")) %>%
   filter(!(collection == "codex" & !str_detect(description, "Stem"))) %>%
   filter(!(collection == "encode_tfbs" & !str_detect(description, "H1"))) %>%
   mutate(oddsRatio = log2(oddsRatio)) %>% 
@@ -353,7 +355,7 @@ enrichment_ht_1 <-
 ComplexHeatmap::Heatmap(matrix            = enrichment_data_pvalue_1, 
                         name              = "Log2(odds ratio)",
                         col               = col_fun,
-                        cluster_rows      = F,
+                        cluster_rows      = T,
                         row_names_side    = "left",
                         cluster_columns   = T,
                         column_names_rot  = 45,
@@ -362,7 +364,7 @@ ComplexHeatmap::Heatmap(matrix            = enrichment_data_pvalue_1,
                         cell_fun          = function(j, i, x, y, width, height, fill) {
                           grid.circle(x   = x, 
                                       y   = y, 
-                                      r   = log(enrichment_data_pvalue_1[i, j])/150,
+                                      r   = log(enrichment_data_pvalue_1[i, j])/80,
                                       gp  = gpar(fill = col_fun(enrichment_data_oddsRatio_1[i, j]), col = "black"))
                           })
 
@@ -403,7 +405,7 @@ enrichment_ht_2 <-
 ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2, 
                         name             = "Log2(odds ratio)",
                         col              = col_fun,
-                        cluster_rows     = F,
+                        cluster_rows     = T,
                         cluster_columns  = T,
                         column_names_rot = 45,
                         border           = "black", 
@@ -411,7 +413,7 @@ ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2,
                         cell_fun         = function(j, i, x, y, width, height, fill) {
                           grid.circle(x  = x, 
                                       y  = y, 
-                                      r  = log(enrichment_data_pvalue_2[i, j])/100,
+                                      r  = log(enrichment_data_pvalue_2[i, j])/80,
                                       gp = gpar(fill = col_fun(enrichment_data_oddsRatio_2[i, j]), col = "black"))
                           })
 
@@ -424,23 +426,23 @@ ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2,
 save(probe_by_type, file = "output/database/Xchrom_probe_by_type.RData")
 
 # Saving density plot
-svg(filename = "output/figures/03_condition_comparison/XChrom_density_plot.svg", width = 6, height = 5)
-#pdf(file = "output/figures/03_condition_comparison/XChrom_density_plot.pdf", width = 6, height = 5)
+svg(filename = "output/figures/revision/XChrom_density_plot.svg", width = 6, height = 5)
+#pdf(file = "output/figures/revision/XChrom_density_plot.pdf", width = 6, height = 5)
 density_plot
 dev.off()
 
 # Saving flow plot
-svg(filename = "output/figures/03_condition_comparison/XChrom_flow_plot.svg", width = 12, height = 9)
-#pdf(file = "output/figures/03_condition_comparison/XChrom_flow_plot.pdf", width = 12, height = 9)
+svg(filename = "output/figures/revision/XChrom_flow_plot.svg", width = 8, height = 9)
+#pdf(file = "output/figures/revision/XChrom_flow_plot.pdf", width = 12, height = 9)
 flow_plot
 dev.off()
 
 # Saving enrichment plots
-svg(filename = "output/figures/03_condition_comparison/XChrom_enrich_plot_1.svg", width = 9, height = 4.5)
+svg(filename = "output/figures/revision/XChrom_enrich_plot_1.svg", width = 6, height = 3)
 enrichment_ht_1
 dev.off()
 
-svg(filename = "output/figures/03_condition_comparison/XChrom_enrich_plot_2.svg", width = 6, height = 4)
+svg(filename = "output/figures/revision/XChrom_enrich_plot_2.svg", width = 6, height = 3)
 enrichment_ht_2
 dev.off()
 

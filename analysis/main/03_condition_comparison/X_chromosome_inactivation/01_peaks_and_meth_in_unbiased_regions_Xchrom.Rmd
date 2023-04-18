@@ -80,7 +80,8 @@ genome_annotation_subset <-
     "CGI Promoters (low expression)",
     "Non-CGI Promoters (high expression)",
     "Non-CGI Promoters (median expression)",
-    "Non-CGI Promoters (low expression)"
+    "Non-CGI Promoters (low expression)",
+    "H9 LADs"
     )] %>% GRangesList()
 
 # Annotated seqmonk probes as a GRanges objects

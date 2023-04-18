@@ -49,18 +49,37 @@ load("output/database/deseq2_results.RData")
 
 ```
 
+# Parameters
+```{r}
+
+adjusted_pvalue  <- 0.001
+log2_fold_change <- 2.5
+min_acore        <- 0.90
+n_clusters       <- 8
+
+```
+
 # Mfuzz analysis
 ```{r}
 
 # Selecting only genes in autosomes
-gene_id_autosomes <- edb_gene_attributes %>% filter(seqnames %in% 1:22) %>% pull(gene_id) %>% unique
+gene_id_autosomes <- 
+  edb_gene_attributes %>% filter(seqnames %in% 1:22) %>% pull(gene_id) %>% unique
 
 # Selecting the deseq2 gene_ids
 deseq_gene_id <- 
-map(deseq2_analysis,
-~ .x %>% .[is.finite(.$padj), ] %>% .[.$padj < 0.05, ] %>% .[abs(.$log2FoldChange) > 2, ] %>% rownames %>% unique
-) %>% purrr::reduce(c) %>% unique
+  map(deseq2_analysis,
+      ~ .x %>%
+        .[is.finite(.$padj), ] %>%
+        .[.$padj < adjusted_pvalue, ] %>%
+        .[abs(.$log2FoldChange) > log2_fold_change, ] %>%
+        rownames %>%
+        unique
+  ) %>% 
+  purrr::reduce(c) %>% 
+  unique
 
+# Create normalized counts matrix
 normalized_counts_by_day <- 
   normalized_counts %>%
   as.data.frame() %>% 
@@ -76,7 +95,9 @@ normalized_counts_by_day <-
   as.matrix()
 
 # Normalized counts of the deseq genes
-norm_counts_deseq <- normalized_counts_by_day %>% .[rownames(.) %in% deseq_gene_id,]
+norm_counts_deseq <- 
+  normalized_counts_by_day %>% 
+  .[rownames(.) %in% deseq_gene_id,]
 
 # Transforms the expression dataframe into a ExpressionSet object and standardises it
 expdata_standardised <- new("ExpressionSet", exprs = as.matrix(norm_counts_deseq)) %>%
@@ -86,47 +107,23 @@ expdata_standardised <- new("ExpressionSet", exprs = as.matrix(norm_counts_deseq
                         standardise()
 
 # This function estimates an optimal setting of fuzzifier m
-optimal_fuzzifier_m <- mestimate(expdata_standardised)
-
-# Choosing the number of clusters:
-# ---------------------------------------------------------#
-# helper function for the within sum of squared error
-sumsqr <- function(x, clusters){
-  sumsqr <- function(x) sum(scale(x, scale = FALSE)^2)
-  wss <- sapply(split(as.data.frame(x), clusters), sumsqr)
-  return(wss)
-}
-# get the wss for repeated clustering
-iterate_fcm_WSS <- function(df,m){
-  totss <- numeric()
-  for (i in 2:20){
-    FCMresults <- cmeans(df,centers=i,m=m)
-    totss[i] <- sum(sumsqr(df,FCMresults$cluster))
-  }
-  return(totss)
-}
-wss_2to20 <- iterate_fcm_WSS(exprs(expdata_standardised), optimal_fuzzifier_m)
-plot(1:20, wss_2to20[1:20], type = "b", xlab = "Number of Clusters", ylab = "Within Group Sum of Squares", xaxt='n')
-axis(side=1, at=seq(2, 20, by = 1))
-abline(v = 6, lty = 2, lwd = 1, col = "red")
-WSS_plot <- recordPlot()
-dev.off()
-# ---------------------------------------------------------#
-# ---------------------------------------------------------#
+optimal_fuzzifier_m <- 
+  mestimate(expdata_standardised)
   
 # Soft clustering of genes based on their expression values using the fuzzy c-means algorithm
-set.seed(123);clusters_object <- mfuzz(expdata_standardised, c = 5, m = optimal_fuzzifier_m)
+set.seed(123);clusters_object <- 
+  mfuzz(expdata_standardised, c = n_clusters, m = optimal_fuzzifier_m)
 
 # Visualises the cluster overlap produced by overlap
-overlap.plot(clusters_object,
-             over = overlap(clusters_object),
+overlap.plot(cl    = clusters_object,
+             over  = overlap(clusters_object),
              thres = 0.05)
 
 overlap_plot <- recordPlot()
 dev.off()
 
 # extracts membership values
-acore <- acore(expdata_standardised, clusters_object, min.acore = 0.8)
+acore      <- acore(expdata_standardised, clusters_object, min.acore = min_acore)
 acore_list <- do.call(rbind, lapply(seq_along(acore), function(i){ data.frame(CLUSTER=i, acore[[i]])}))
 
 # RNAseq log2 normalized counts in each mfuzz cluster
@@ -143,14 +140,22 @@ mfuzz_clusters <-
  ungroup %>%
  mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
  spread(day, value) %>%
- mutate(CLUSTER = case_when(CLUSTER == 5 ~ 1,
-                            CLUSTER == 1 ~ 2,
+ mutate(CLUSTER = case_when(CLUSTER == 6 ~ 1,
+                            CLUSTER == 5 ~ 2,
                             CLUSTER == 2 ~ 3,
-                            CLUSTER == 4 ~ 4,
-                            CLUSTER == 3 ~ 5,
+                            CLUSTER == 7 ~ 4,
+                            CLUSTER == 8 ~ 5,
+                            CLUSTER == 4 ~ 6,
+                            CLUSTER == 3 ~ 7,
+                            CLUSTER == 1 ~ 8,
                             TRUE ~ 0)) %>%
- mutate(CLUSTER = factor(CLUSTER, levels = 1:5)) %>%
+ mutate(CLUSTER = factor(CLUSTER, levels = 1:8)) %>%
  arrange(CLUSTER)
+
+```
+
+# Functional characterization
+```{r}
 
 # Gene ontology
 enrichGO_clusters <-
@@ -162,9 +167,10 @@ function(x){
          universe      = rownames(tximport$counts) %>% unique,
          keyType       = "ENSEMBL",
          OrgDb         = org.Hs.eg.db,
-         ont           = "BP",
+         ont           = "ALL",
          pAdjustMethod = "BH",
-         qvalueCutoff  = 0.01,
+         qvalueCutoff  = 0.1,
+         pvalueCutoff  = 0.1,
          readable      = TRUE
          )
   
@@ -172,7 +178,6 @@ function(x){
 
   }
 )
-
 
 # KEGG pathways
 enrichKEGG_clusters <-
@@ -195,16 +200,20 @@ kegg_results <-
 enrichKEGG(gene          = gene_entrez,
            organism      = "hsa",
            keyType       = "kegg",
-           pvalueCutoff  = 0.01,
+           pvalueCutoff  = 0.1,
            pAdjustMethod = "BH",
            universe      = universe_entrez,
-           qvalueCutoff  = 0.01) %>% 
+           qvalueCutoff  = 0.1) %>% 
   setReadable(OrgDb = org.Hs.eg.db, keyType = "ENTREZID")
 
 return(kegg_results)
 })
 
+```
+
 # Saving results
+```{r}
+
 save(mfuzz_clusters, enrichGO_clusters, enrichKEGG_clusters, file = "output/database/rnaseq_DGE_clusters.RData")
 
 ```

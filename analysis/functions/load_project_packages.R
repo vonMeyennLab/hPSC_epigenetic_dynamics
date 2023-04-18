@@ -58,7 +58,7 @@ suppressPackageStartupMessages({
   library(bsseq)
   library(Mfuzz)
   library(AnnotationDbi)
-  library(BSgenome)
+  #library(BSgenome)
 })
 
 # resolving package conflicts

@@ -1,0 +1,206 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Promoter and gene expression analysis"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading promoter data
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- unique(counts_in_promoters_full)
+
+```
+# Loading RNA-seq clusters
+```{r}
+
+load("output/database/rnaseq_DGE_clusters.RData")
+
+```
+
+# Multiple regression options
+```{r}
+
+multiple_regression_data_list <-
+list(
+     "Promoters from RNA-seq clusters genes" = 
+       counts_in_promoters_full %>%
+       mutate_at(.vars = vars(-gene_id, -seqnames, -group, -CGI, -gene_biotype), .funs = ~ scales::rescale(.x, to = c(0,1))) %>%
+       filter(gene_id %in% unique(mfuzz_clusters$gene_id)) 
+)
+
+# Multiple regression settings
+formula <- `RNA-Seq` ~ `ATAC-Seq` + H3K27ac + H3K27me3 + H3K4me1 + H3K4me3 + H3K9me3 + Methylation
+boot_t <- 1000
+
+```
+
+# Using the epigenetic marks from a sample group to predict gene expression from another sample group
+```{r}
+
+#######################################################
+# Function to copy the epigenetic data from one sample group to another
+copy_epigenetic_data <- 
+function(regression_data_by_group, epigenetic_marks_from){
+  
+  map(regression_data_by_group,
+      ~ mutate(.x, `ATAC-Seq`      = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$`ATAC-Seq`,
+                    H3K27ac        = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$H3K27ac,
+                    H3K27me3       = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$H3K27me3,
+                    H3K4me1        = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$H3K4me1,
+                    H3K4me3        = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$H3K4me3,
+                    H3K9me3        = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$H3K9me3,
+                    Methylation    = regression_data_by_group %>% .[[epigenetic_marks_from]] %>% .$Methylation) 
+                                 )
+}
+
+# Creating a data list with the same epigenetic data in all sample groups
+multiple_regression_data_list_prediction <- 
+map(c(
+      "HNES1 d0",
+      "cR-H9-EOS d0",
+      "HNES1 d10",
+      "cR-H9-EOS d10",
+      "cR-H9-EOS d20X", 
+      "cR-H9-EOS d20E",
+      "H9-EOS"),
+    
+    function(x){
+      
+      map(multiple_regression_data_list,
+          ~ named_group_split(.x, group) %>%
+            copy_epigenetic_data(epigenetic_marks_from = x) %>% purrr::reduce(rbind)) %>%
+        map2_dfr(names(.), ~ mutate(.x, data_type = .y)) %>%
+        named_group_split(data_type)
+      
+    }) %>% set_names(c(
+                        "HNES1 d0",
+                        "cR-H9-EOS d0",
+                        "HNES1 d10",
+                        "cR-H9-EOS d10",
+                        "cR-H9-EOS d20X", 
+                        "cR-H9-EOS d20E",
+                        "H9-EOS"))
+#######################################################
+
+```
+
+# Expected vs. Predicted
+```{r}
+
+# Expected R-Square results
+global_rsq_plot_data <- 
+map(multiple_regression_data_list, ~ get_global_rsq_plot_data(.x, formula, boot_t))
+
+# Predicted R-Square results
+global_rsq_plot_data_prediction <- 
+map(multiple_regression_data_list_prediction, function(x){map(x, ~ get_global_rsq_plot_data(.x, formula, boot_t))})
+
+prediction_plot_data <- 
+global_rsq_plot_data_prediction %>%
+  map(~ map2_dfr(.x, names(.x), ~ mutate(.x, gene_set = .y, analysis_type = "unmatched"))) %>%
+  map(~ rbind(.x, map2_dfr(global_rsq_plot_data, names(global_rsq_plot_data), ~ mutate(.x, gene_set = .y, analysis_type = "matched")))) %>% 
+  map2_df(names(.), ~ mutate(.x,
+                                  epigenetic_group = .y %>% factor(levels =
+                                                  c(
+                                                    "HNES1 d0",
+                                                    "cR-H9-EOS d0",
+                                                    "HNES1 d3",
+                                                    "cR-H9-EOS d3",
+                                                    "HNES1 d10",
+                                                    "cR-H9-EOS d10",
+                                                    "cR-H9-EOS d20X", 
+                                                    "cR-H9-EOS d20E",
+                                                    "H9-EOS"
+                                                  )))) %>% 
+  left_join(RNAseq_metadata[, c("group", "color")] %>% unique, by = "group") %>%
+  mutate(group = factor(group, levels =
+                                                  c(
+                                                    "HNES1 d0",
+                                                    "cR-H9-EOS d0",
+                                                    "HNES1 d3",
+                                                    "cR-H9-EOS d3",
+                                                    "HNES1 d10",
+                                                    "cR-H9-EOS d10",
+                                                    "cR-H9-EOS d20X", 
+                                                    "cR-H9-EOS d20E",
+                                                    "H9-EOS"
+                                                  ))) %>% 
+  mutate(color = case_when(analysis_type == "matched" ~ brewer.pal(n = 9, name = "Greens")[6], TRUE ~ brewer.pal(n = 9, name = "Reds")[6])) %>% 
+  filter(!str_detect(group, "d3") & !str_detect(epigenetic_group, "d3"))
+
+prediction_plot <- 
+left_join(
+prediction_plot_data %>% 
+  select(group, rsq, gene_set, analysis_type, epigenetic_group) %>% 
+  spread(analysis_type, rsq), #%>% 
+  #mutate(rsq_diff = unmatched - matched),
+prediction_plot_data %>% 
+  select(group, rsq_l, gene_set, analysis_type, epigenetic_group) %>% 
+  spread(analysis_type, rsq_l) %>% 
+  dplyr::rename(rsq_l = unmatched) %>% 
+  select(-matched)) %>% 
+left_join(
+prediction_plot_data %>% 
+  select(group, rsq_u, gene_set, analysis_type, epigenetic_group) %>% 
+  spread(analysis_type, rsq_u) %>% 
+  dplyr::rename(rsq_u = unmatched) %>% 
+  select(-matched)
+) %>% 
+  mutate(rsq_l = rsq_l - matched) %>% 
+  mutate(rsq_u = rsq_u - matched) %>% 
+  left_join(unique(RNAseq_metadata[, c("group", "color")]), by = c("epigenetic_group" = "group")) %>% 
+  mutate(group = factor(str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed"), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>% 
+  mutate(epigenetic_group = factor(str_remove(epigenetic_group, "-EOS") %>% str_replace("H9$", "H9 Primed"), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+  mutate(rsq_l = case_when(group == epigenetic_group ~ NA_real_, TRUE ~ rsq_l)) %>%
+  mutate(rsq_u = case_when(group == epigenetic_group ~ NA_real_, TRUE ~ rsq_u)) %>% 
+  ggplot(aes(group, unmatched, group = epigenetic_group, color = color)) +
+  geom_vline(aes(xintercept = epigenetic_group), color = "gray", lty = 2) +
+  geom_smooth(size = 3, se = F, color = "black") +
+  geom_smooth(size = 2, se = F) +
+  # geom_line(size = 3, color = "black") +
+  # geom_line(size = 2) +
+	theme_publication() +
+  scale_color_identity(aes(color)) +
+	theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1), 
+	      panel.grid.minor = element_blank(), 
+	      panel.grid.major = element_blank()) +
+	labs(x = "", y = "Adjusted R-squared") +
+  scale_y_continuous(limits = c(0, 0.46))
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/revision/promoter_expression_prediction.svg", width = 3.5, height = 3.5)
+prediction_plot
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

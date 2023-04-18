@@ -23,7 +23,7 @@ purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", 
 # Chosing the annotations
 ```{r}
 
-region_gr <- genome_annotation$Repeats
+region_gr <- genome_annotation$`H9 LADs`
 
 ```
 
@@ -59,7 +59,7 @@ chipseq_atacseq_normalized_counts <-
 
 save(
 chipseq_atacseq_normalized_counts,
-file = paste0("output/database/chipseq_atacseq_counts_in_", "repeats", ".RData"))
+file = paste0("output/database/chipseq_atacseq_counts_in_", "H9_LADs", ".RData"))
 
 ```
 

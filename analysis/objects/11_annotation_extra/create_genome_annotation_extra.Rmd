@@ -64,6 +64,13 @@ bivalent_promoters_by_group <-
 
 ```
 
+# Lamin B1 LADs
+```{r}
+
+GSM5669226_H9ESC_LADs     <- rtracklayer::import("analysis/objects/3_annotation/LaminB1/GSM5669226_H9ESC_LADs.bed", format = "bed")
+
+```
+
 # Exporting annotations to rds object
 ```{r}
 
@@ -81,7 +88,8 @@ list(
 "Bivalent promoters cR-H9 d10"                   = bivalent_promoters_by_group$`cR-H9-EOS d10`,
 "Bivalent promoters cR-H9 d20X"                  = bivalent_promoters_by_group$`cR-H9-EOS d20X`,
 "Bivalent promoters cR-H9 d20E"                  = bivalent_promoters_by_group$`cR-H9-EOS d20E`,
-"Bivalent promoters H9 Primed"                   = bivalent_promoters_by_group$`H9-EOS`
+"Bivalent promoters H9 Primed"                   = bivalent_promoters_by_group$`H9-EOS`,
+"H9 LADs"                                        = GSM5669226_H9ESC_LADs
 )
 
 # Adding annotated promoters to annotation list 

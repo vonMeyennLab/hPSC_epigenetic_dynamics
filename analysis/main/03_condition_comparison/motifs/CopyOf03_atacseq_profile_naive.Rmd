@@ -85,10 +85,11 @@ map(meth_w_replicates, function(x){
             mutate(sample_id = .y)
     )}) 
 
+plan("multisession", workers = 7)
 # CpG methylation by group
 meth_by_group <- 
   meth_w_replicates_filtered %>% 
-  map2_dfr(names(.),
+  furrr::future_map2_dfr(names(.),
          ~ left_join(.x, unique(PBAT_metadata %>% .[, c("sample_id", "group", "day")]), by = c("sample_id")) %>%
            group_by(seqnames,  start,end, group, day) %>%
            summarize(score = mean(meth_ratio, na.rm = T)) %>%
@@ -97,27 +98,14 @@ meth_by_group <-
   named_group_split(group) %>% 
   map(~ makeGRangesFromDataFrame(.x, keep.extra.columns = T))
 
+plan("sequential")
+
 ```
 
-# Loading results from MOFA2 factor 1 (ATAC-seq Naive)
+# TSS of protein-coding genes in autosomes
 ```{r}
 
-plot_data <- readRDS(file = "output/database/MOFA2_w_methylation_plot_data.rds")
-
-# USER SET
-userSets_signif <- 
-  plot_data %>%
-  filter(abs(value) > 0.5) %>% 
-  select(feature, feature_type) %>%
-  unique %>%
-  named_group_split(feature_type) %>%
-  map(~
-        tidyr::separate(.x, feature, c("chr", "start", "end"), sep = ":") %>%
-        makeGRangesFromDataFrame(keep.extra.columns = T)
-      )
-
-# Selecting ATAC-Seq naive significant regions
-regions <- userSets_signif$`ATAC-seq.Naive (7695)` %>% resize(1, fix = "center")
+TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% .[.$gene_biotype == "protein_coding"]
 
 ```
 
@@ -142,7 +130,7 @@ furrr::future_map(list(
   "H3K4me3_cR_H9_EOS_d20X" = bigwig_H3K4me3[["cR_H9_EOS_d20X"]],
   "H3K4me3_cR_H9_EOS_d20E" = bigwig_H3K4me3[["cR_H9_EOS_d20E"]],
   "H3K4me3_H9_EOS"         = bigwig_H3K4me3[["H9_EOS"]],
-  
+    
   "H3K4me1_HNES1_d0"       = bigwig_H3K4me1[["HNES1_d0"]],
   "H3K4me1_cR_H9_EOS_d0"   = bigwig_H3K4me1[["cR_H9_EOS_d0"]],
   "H3K4me1_HNES1_d10"      = bigwig_H3K4me1[["HNES1_d10"]],
@@ -181,17 +169,18 @@ furrr::future_map(list(
   "Methylation_cR_H9_EOS_d10"  = meth_by_group[["cR-H9-EOS d10"]],
   "Methylation_cR_H9_EOS_d20X" = meth_by_group[["cR-H9-EOS d20X"]],
   "Methylation_cR_H9_EOS_d20E" = meth_by_group[["cR-H9-EOS d20E"]],
-  "Methylation_H9_EOS"         = meth_by_group[["H9-EOS"]]
+  "Methylation_H9_EOS"         = meth_by_group[["H9-EOS"]],
+
+  "Input"                      = bigwig_input[["INPUT_R1.mLb.clN.bigWig"]]
   ),
      ~ normalizeToMatrix(signal       = .x %>% .[seqnames(.) %in% 1:22], 
-                         target       = regions, 
+                         target       = TSS_in_autosomes, 
                          value_column = "score", 
                          mean_mode    = "absolute",
-                         extend       = 1000,
+                         extend       = 2000,
                          w            = 50,
                          smooth       = T)
 );plan("sequential")
-
 
 # Normalized matrix of epigenetic data heatmap
 normalized_matriz_ht_list <-
@@ -204,7 +193,8 @@ normalized_matriz_list$`ATAC-Seq_HNES1_d10`,
 normalized_matriz_list$`ATAC-Seq_cR_H9_EOS_d10`,
 normalized_matriz_list$`ATAC-Seq_cR_H9_EOS_d20X`,
 normalized_matriz_list$`ATAC-Seq_cR_H9_EOS_d20E`,
-normalized_matriz_list$`ATAC-Seq_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`ATAC-Seq_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
   
 "H3K4me3" =
 list(
@@ -214,7 +204,8 @@ normalized_matriz_list$`H3K4me3_HNES1_d10`,
 normalized_matriz_list$`H3K4me3_cR_H9_EOS_d10`,
 normalized_matriz_list$`H3K4me3_cR_H9_EOS_d20X`,
 normalized_matriz_list$`H3K4me3_cR_H9_EOS_d20E`,
-normalized_matriz_list$`H3K4me3_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`H3K4me3_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
 
 "H3K4me1" =
 list(
@@ -224,7 +215,8 @@ normalized_matriz_list$`H3K4me1_HNES1_d10`,
 normalized_matriz_list$`H3K4me1_cR_H9_EOS_d10`,
 normalized_matriz_list$`H3K4me1_cR_H9_EOS_d20X`,
 normalized_matriz_list$`H3K4me1_cR_H9_EOS_d20E`,
-normalized_matriz_list$`H3K4me1_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`H3K4me1_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
 
 "H3K27me3" =
 list(
@@ -234,7 +226,8 @@ normalized_matriz_list$`H3K27me3_HNES1_d10`,
 normalized_matriz_list$`H3K27me3_cR_H9_EOS_d10`,
 normalized_matriz_list$`H3K27me3_cR_H9_EOS_d20X`,
 normalized_matriz_list$`H3K27me3_cR_H9_EOS_d20E`,
-normalized_matriz_list$`H3K27me3_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`H3K27me3_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
 
 "H3K27ac" =
 list(
@@ -244,7 +237,8 @@ normalized_matriz_list$`H3K27ac_HNES1_d10`,
 normalized_matriz_list$`H3K27ac_cR_H9_EOS_d10`,
 normalized_matriz_list$`H3K27ac_cR_H9_EOS_d20X`,
 normalized_matriz_list$`H3K27ac_cR_H9_EOS_d20E`,
-normalized_matriz_list$`H3K27ac_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`H3K27ac_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
 
 "H3K9me3" =
 list(
@@ -254,7 +248,8 @@ normalized_matriz_list$`H3K9me3_HNES1_d10`,
 normalized_matriz_list$`H3K9me3_cR_H9_EOS_d10`,
 normalized_matriz_list$`H3K9me3_cR_H9_EOS_d20X`,
 normalized_matriz_list$`H3K9me3_cR_H9_EOS_d20E`,
-normalized_matriz_list$`H3K9me3_H9_EOS`) %>% purrr::reduce(rbind),
+normalized_matriz_list$`H3K9me3_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind),
 
 "Methylation" =
 list(
@@ -264,7 +259,8 @@ normalized_matriz_list$`Methylation_HNES1_d10`,
 normalized_matriz_list$`Methylation_cR_H9_EOS_d10`,
 normalized_matriz_list$`Methylation_cR_H9_EOS_d20X`,
 normalized_matriz_list$`Methylation_cR_H9_EOS_d20E`,
-normalized_matriz_list$`Methylation_H9_EOS`) %>% purrr::reduce(rbind)
+normalized_matriz_list$`Methylation_H9_EOS`,
+normalized_matriz_list$`Input`) %>% purrr::reduce(rbind)
 ) %>% 
 map2(names(.),
   ~ EnrichedHeatmap(.x, 
@@ -274,59 +270,27 @@ map2(names(.),
                     col                  = if(.y == "Methylation"){circlize::colorRamp2(c(0,0.5,1), c("blue", "white", "red"))} else {circlize::colorRamp2(c(0, (quantile(.x, 0.95, na.rm = T))/2,(quantile(.x, 0.95, na.rm = T))), c("blue", "white", "red"))},
                     use_raster           = T,
                     raster_by_magick     = T,
-                    row_split            = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"), each = 19397), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")),
-                    top_annotation       = HeatmapAnnotation(lines = anno_enriched(gp = gpar(lwd = 2, col = c("#ABD5FF", "#dddd4b", "#2A7AB9", "#EA2820", "#C20324", "#800026", "darkgray"))))
+                    row_split            = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input"), each = 19035), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input")),
+                    top_annotation       = HeatmapAnnotation(lines = anno_enriched(gp = gpar(lwd = 2, col = c("#ABD5FF", "#dddd4b", "#2A7AB9", "#EA2820", "#C20324", "#800026", "darkgray", "black"))))
                     ))
-
-Heatmap(matrix               = list(distance_df,distance_df,distance_df,distance_df,distance_df,distance_df,distance_df) %>% purrr::reduce(rbind), 
-        name                 = "Condition", 
-        show_row_names       = FALSE, 
-        width                = unit(3, "mm"), 
-        cluster_rows         = F, 
-        border               = "black",
-        row_split            = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"), each = 19397), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
-
-# Normalized matrix of CpG islands
-CGI_normalized_matriz_list <-
-  normalizeToMatrix(
-    signal = genome_annotation$`CpG islands` %>%
-      as.data.frame() %>%
-      mutate(score = 1) %>%
-      makeGRangesFromDataFrame(keep.extra.columns = T) %>%
-      .[seqnames(.) %in% 1:22],
-      target       = regions,
-      value_column = "score",
-      mean_mode    = "absolute",
-      extend       = 1000,
-      w            = 50,
-      smooth       = T,
-      background   = 0)
 
 # Final heatmap
 ht_list <- 
 draw(
-normalized_matriz_ht_list$H3K27me3 +
-EnrichedHeatmap(list(CGI_normalized_matriz_list,CGI_normalized_matriz_list,CGI_normalized_matriz_list,CGI_normalized_matriz_list,CGI_normalized_matriz_list,CGI_normalized_matriz_list,CGI_normalized_matriz_list) %>% purrr::reduce(rbind),
-                name           = "CpG islands",
-                column_title   = "CpG islands",
-                cluster_rows   = F,
-                row_split      = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"), each = 19397), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")),
-                col            = circlize::colorRamp2(c(0, 1), c("white", "black")),
-                use_raster     = F
-                ) +
-normalized_matriz_ht_list$H3K9me3 +
-Heatmap(matrix = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"), each = 19397), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")), 
-        col                  = c("#ABD5FF", "#dddd4b", "#2A7AB9", "#EA2820", "#C20324", "#800026", "darkgray"),
+Heatmap(matrix = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input"), each = 19035), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input")), 
+        col                  = c("#ABD5FF", "#dddd4b", "#2A7AB9", "#EA2820", "#C20324", "#800026", "darkgray", "black"),
         name                 = "Condition", 
         show_row_names       = FALSE, 
         width                = unit(3, "mm"), 
         cluster_rows         = F, 
         border               = "black",
-        row_split            = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"), each = 19397), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) +
+        row_split            = factor(rep(c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input"), each = 19035), levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed", "Input"))) +
 normalized_matriz_ht_list$`ATAC-Seq` +
 normalized_matriz_ht_list$H3K4me3 +
 normalized_matriz_ht_list$H3K27ac +
 normalized_matriz_ht_list$H3K4me1 +
+normalized_matriz_ht_list$H3K27me3 +
+normalized_matriz_ht_list$H3K9me3 +
 normalized_matriz_ht_list$Methylation
 )
 
@@ -342,11 +306,11 @@ add_anno_enriched = function(ht_list, name, ri, ci) {
 # Saving ATAC-seq Naive significant peaks
 ```{r}
 
-png(filename = "output/figures/03_condition_comparison/ATACseq_naive_signif_ht.png", width = 12, height = 10, res = 300, units = "in")
+png(filename = "output/figures/revision/ATACseq_naive_signif_ht.png", width = 12, height = 10, res = 300, units = "in")
 ht_list
 dev.off()
 
-svg(filename = "output/figures/03_condition_comparison/ATACseq_naive_signif_profile.svg", width = 15, height = 1.75)
+svg(filename = "output/figures/revision/ATACseq_naive_signif_profile.svg", width = 15, height = 1.75)
 pushViewport(viewport(layout = grid.layout(nr = 1, nc = 7)))
 add_anno_enriched(ht_list, "ATAC-Seq", 1, 1)
 add_anno_enriched(ht_list, "H3K4me3", 1, 2)

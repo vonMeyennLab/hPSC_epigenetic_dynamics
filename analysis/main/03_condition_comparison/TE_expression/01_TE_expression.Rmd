@@ -211,6 +211,8 @@ map2(list(Rostovskaya_2019_diffTE, Zijlmans_2022_diffTE, Kumar_2022_diffTE, Coll
   geom_point(color = ifelse(x$padj < 0.05 & abs(x$log2FoldChange) > 2, 'red', 'gray'), size = 3) +
   ggrepel::geom_label_repel(data = x %>% filter(padj < 0.05) %>% filter(abs(log2FoldChange) > 2), box.padding = 0.5) +
   theme_publication() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
   labs(x = "Log2 Fold Change", y = "-Log10 Adjusted p-value", title = y) +
   scale_x_continuous(limits = c(-15, 15)) +
   facet_grid(~ comparison)
@@ -229,12 +231,11 @@ svg(filename = "output/figures/revision/TE_expression_plots.svg", width = 13, he
 (TE_expression_plots$Collinson_2016$boxplot_1   + TE_expression_plots$Collinson_2016$boxplot_2)
 dev.off()
 
-svg(filename = "output/figures/revision/TE_Diff_plots.svg", width = 13, height = 20)
+svg(filename = "output/figures/revision/TE_Diff_plots.svg", width = 11, height = 15)
 TE_Diff_plots[[1]] / TE_Diff_plots[[2]] / TE_Diff_plots[[3]] / TE_Diff_plots[[4]]
 dev.off()
 
 ```
-
 
 # Session information
 ```{r session_info, echo = FALSE}

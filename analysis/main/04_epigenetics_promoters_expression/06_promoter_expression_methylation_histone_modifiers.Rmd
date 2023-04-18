@@ -71,8 +71,17 @@ DNMT_TET_IDH_genes <- list(
   "IDH"  = c("IDH1", "IDH2", "IDH3A", "IDH3B", "IDH1-AS1", "IDH2-DT")
   )
 
+histone_acetyltransferases_genes <- 
+  list("Histone acetyltransferases" = c("ATAT1", "ESCO1", "ESCO2", "HAT1", "KAT2A", 'KAT2B', 'CREBBP', 'EP300', 'TAF1', 'ELP3', 'GTF3C4', 'NCOA1', 'NCOA3', 'NCOA2', 'CLOCK', 'KAT14', 'MCM3AP'))
+
+histone_deacetylases_genes <- 
+list("Histone deacetylases" = c('HDAC1', 'HDAC2', 'HDAC3', 'HDAC8', 'HDAC4', 'HDAC5', 'HDAC7', 'HDAC9', 'HDAC6', 'HDAC10', 'HDAC11', 'SIRT1', 'SIRT2', 'SIRT3', 'SIRT4', 'SIRT5', 'SIRT6', 'SIRT7'))
+
+histone_demethylases_genes <-
+list("Histone demethylases" = c('KDM1A', 'KDM1B', 'KDM2A', 'KDM2B', 'KDM3A', 'KDM3B', 'JMJD1C', 'KDM4A', 'KDM4B', 'KDM4C', 'KDM4D', 'KDM4E', 'KDM4F', 'KDM5A', 'KDM5B', 'KDM5C', 'KDM5D', 'KDM6A', 'KDM6B', 'UTY', 'KDM7A', 'PHF8', 'PHF2', 'KDM8'))
+
 # Combining PcG and TrxG subgroup genes with DNMT, TET, and IDH gene family
-combined_gene_list <- c(PcG_TrxG_gene_list, DNMT_TET_IDH_genes)
+combined_gene_list <- c(PcG_TrxG_gene_list, DNMT_TET_IDH_genes, histone_acetyltransferases_genes, histone_deacetylases_genes, histone_demethylases_genes)
 
 ```
 
@@ -134,8 +143,17 @@ ht_DNMT_TET_IDH_list <-
   heatmap_plots$TET %v%
   heatmap_plots$IDH
 
-svg(filename = "output/figures/revision/ht_DNMT_TET_IDH.svg", width = 3.5, height = 4.5)
+svg(filename = "output/figures/revision/ht_DNMT_TET_IDH.svg", width = 3.5, height = 4)
 draw(ht_DNMT_TET_IDH_list)
+dev.off()
+
+ht_hist_modifiers_list <-  
+  heatmap_plots$`Histone acetyltransferases` %v%
+  heatmap_plots$`Histone deacetylases` %v%
+  heatmap_plots$`Histone demethylases`
+
+svg(filename = "output/figures/revision/ht_hist_modifiers.svg", width = 3.5, height = 12)
+draw(ht_hist_modifiers_list)
 dev.off()
 
 ```

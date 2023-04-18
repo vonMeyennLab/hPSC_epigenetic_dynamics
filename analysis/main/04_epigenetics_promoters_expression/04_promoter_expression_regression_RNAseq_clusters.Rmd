@@ -1,0 +1,236 @@
+---
+title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
+subtitle: "Promoter and gene expression analysis"
+author:   "João Pedro Agostinho de Sousa"
+date:     "May 18, 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
+    #toc_float: TRUE
+    theme: default
+editor_options:
+  chunk_output_type: console
+---
+
+# Dependencies
+```{r Packages, results = "hide", warning = FALSE}
+
+purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", full.names = T), source)
+
+```
+
+# Loading promoter counts
+```{r}
+
+load("output/database/counts_in_promoters_full.RData")
+
+counts_in_promoters_full <- 
+  unique(counts_in_promoters_full)
+
+```
+
+# Loading RNA-seq clusters
+```{r}
+
+load("output/database/rnaseq_DGE_clusters.RData")
+
+```
+
+# Multiple regression options
+```{r}
+
+multiple_regression_data_list <-
+list(
+     "Promoters from RNA-seq clusters genes" = 
+       counts_in_promoters_full %>%
+       mutate_at(.vars = vars(-gene_id, -seqnames, -group, -CGI, -gene_biotype), .funs = ~ scales::rescale(.x, to = c(0,1))) %>%
+       filter(gene_id %in% unique(mfuzz_clusters$gene_id)) 
+)
+
+# Multiple regression settings
+formula <- `RNA-Seq` ~ `ATAC-Seq` + H3K27ac + H3K27me3 + H3K4me1 + H3K4me3 + H3K9me3 + Methylation
+boot_t <- 1000
+
+```
+
+# R-Squared
+```{r}
+
+global_rsq_plot_data <- 
+map(multiple_regression_data_list, ~ get_global_rsq_plot_data(.x, formula, boot_t))
+
+global_rsq_plot <- 
+    global_rsq_plot_data %>%
+    map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+    left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+    mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+    mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+    ggplot(aes(group, rsq, fill = color)) +
+	  geom_col(show.legend = F, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = rsq_l, ymax = rsq_u), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+    scale_fill_identity(aes(color)) +
+	  theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1),
+	        panel.grid.major = element_blank(), 
+	        panel.grid.minor = element_blank()) +
+	  labs(x = "", y = "Adjusted R-squared") +
+    scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    facet_wrap(gene_set ~ ., ncol = 1) +
+    scale_y_continuous(limits = c(0, 0.465))
+
+```
+
+# Regression estimate
+```{r}
+
+regression_estimate_data <- map(multiple_regression_data_list, ~ get_regression_estimate_data(.x, formula, boot_t))
+
+regression_estimate_plot <- 
+  regression_estimate_data %>% 
+  map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+  left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+  mutate(
+  variable = factor(variable, levels = c(
+  "ATAC-Seq",
+  "H3K4me3",
+  "H3K27ac",
+  "H3K4me1",
+  "H3K27me3",
+  "H3K9me3",
+  "Methylation"
+  ))
+  ) %>%
+    mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+    mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed"))) %>%
+ggplot(aes(variable, regression_coefficient, group = group, fill = color)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = confidence_interval_low, ymax = confidence_interval_high), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(), 
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "Regression coefficient estimate") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+
+```
+
+# Relative importance of regressors
+```{r}
+
+relative_importance_data <- map(multiple_regression_data_list, ~ get_relative_importance_data(.x, formula, boot_t))
+
+relative_importance_data_plot <- 
+  relative_importance_data %>%
+  map2_df(names(.), ~ mutate(.x %>% filter(! group %in% c("HNES1 d3", "cR-H9-EOS d3")), gene_set = .y)) %>% 
+  left_join((RNAseq_metadata %>% select(group, color) %>% unique), by = "group") %>% 
+  mutate(seqtype = factor(seqtype, levels = c(
+  "ATAC-Seq",
+  "H3K4me3",
+  "H3K27ac",
+  "H3K4me1",
+  "H3K27me3",
+  "H3K9me3",
+  "Methylation"
+  ))) %>%
+  mutate(group = group %>% str_replace("^H9-EOS$", "H9 Primed") %>% str_remove("-EOS")) %>%
+  mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
+
+relative_importance_data_plot_lmg <- 
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(lmg)) %>%
+  ggplot(aes(seqtype, lmg*100, fill = color, group = group)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = lmg_lower*100, ymax = lmg_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "% of R-squared") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+   
+relative_importance_data_plot_first <-
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(first)) %>% 
+  ggplot(aes(seqtype, first*100, fill = color, group = group)) +
+	  geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	  geom_errorbar(aes(ymin = first_lower*100, ymax = first_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	  theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	  labs(x = "", y = "% of R-squared") +
+    scale_fill_identity(aes(color)) +
+    facet_grid(gene_set ~ .)
+
+relative_importance_data_plot_last <-
+  relative_importance_data_plot %>% 
+  arrange(group, dplyr::desc(last)) %>% 
+  ggplot(aes(seqtype, last*100, fill = color, group = group)) +
+	geom_col(show.legend = T, position = position_dodge(), color = "black") +
+	geom_errorbar(aes(ymin = last_lower*100, ymax = last_upper*100), position = position_dodge(width = 0.9), width = .3) +
+	theme_publication() +
+	  theme(axis.text.x          = element_text(angle = 45, hjust = 1, vjust = 1),
+	        legend.position      = c(0.98, 0.98),
+          legend.justification = c("right", "top"),
+          legend.box.just      = "right",
+          legend.margin        = margin(0, 0, 0, 0),
+	        legend.direction     = "vertical",
+	        legend.title         = element_blank(),
+	        panel.grid.major     = element_blank(), 
+	        panel.grid.minor     = element_blank(),
+	        ) +
+	labs(x = "", y = "% of R-squared") +
+  scale_fill_identity(aes(color)) +
+  facet_grid(gene_set ~ .)
+
+```
+
+# Saving plots
+```{r}
+
+svg(filename = "output/figures/revision/promoter_expression_regression_1.svg", width = 3, height = 3.5)
+global_rsq_plot
+dev.off()
+
+svg(filename = "output/figures/revision/promoter_expression_regression_2.svg", width = 6, height = 7)
+regression_estimate_plot / relative_importance_data_plot_lmg
+dev.off()
+
+svg(filename = "output/figures/revision/promoter_expression_regression_3.svg", width = 9, height = 6)
+relative_importance_data_plot_first + relative_importance_data_plot_last
+dev.off()
+
+```
+
+# Session information
+```{r session_info, echo = FALSE}
+
+devtools::session_info()
+
+```
+
+This document was processed on: `r Sys.Date()`.

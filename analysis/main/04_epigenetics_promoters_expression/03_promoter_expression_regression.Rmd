@@ -25,7 +25,8 @@ purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", 
 
 load("output/database/counts_in_promoters_full.RData")
 
-counts_in_promoters_full <- unique(counts_in_promoters_full)
+counts_in_promoters_full <- 
+  unique(counts_in_promoters_full)
 
 ```
 
@@ -398,7 +399,7 @@ counts_vs_density_by_pluripotency_data <-
   mutate(alpha_value = case_when(selected_genes == "All protein-coding genes" ~ 0.1, TRUE ~ 1)) %>% 
   select(gene_id, group, `RNA-Seq`, gene_biotype, seqtype, value, OE_ratio, selected_genes, gene_name, alpha_value) %>%
   filter(gene_biotype == "protein_coding") %>%
-  filter(seqtype %in% c("H3K27me3", "H3K4me3")) %>% 
+  filter(seqtype %in% c("H3K27me3", "H3K4me3", "H3K27ac")) %>% 
   mutate(group = str_remove(group, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
   mutate(group = factor(group, levels = c("HNES1 d0", "cR-H9 d0", "HNES1 d10", "cR-H9 d10", "cR-H9 d20X", "cR-H9 d20E", "H9 Primed")))
 
