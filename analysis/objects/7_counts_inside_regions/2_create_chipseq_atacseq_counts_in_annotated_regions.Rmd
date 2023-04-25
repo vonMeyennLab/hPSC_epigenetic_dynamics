@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Counts in annotated regions"
 author:   "João Pedro Agostinho de Sousa"
-date:     "October 22, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -23,7 +23,7 @@ purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", 
 # Chosing the annotations
 ```{r}
 
-region_gr <- genome_annotation$`H9 LADs`
+region_gr <- genome_annotation$`CpG islands`
 
 ```
 
@@ -59,7 +59,7 @@ chipseq_atacseq_normalized_counts <-
 
 save(
 chipseq_atacseq_normalized_counts,
-file = paste0("output/database/chipseq_atacseq_counts_in_", "H9_LADs", ".RData"))
+file = paste0("output/database/chipseq_atacseq_counts_in_", "`CpG_islands`", ".RData"))
 
 ```
 

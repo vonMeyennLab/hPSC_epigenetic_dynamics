@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Create PBAT counts database"
 author:   "João Pedro Agostinho de Sousa"
-date:     "October 22, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -22,6 +22,7 @@ purrr::walk(list.files("analysis/functions", pattern = "load_project_packages", 
 
 # Reading methylation files and saving them
 ```{r}
+
 # ------------------------------------------------ #
 PBATdb <-
   methylKit::methRead(

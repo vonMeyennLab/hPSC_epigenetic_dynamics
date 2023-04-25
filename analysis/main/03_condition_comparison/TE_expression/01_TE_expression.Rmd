@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "TE expression"
+subtitle: "Transposable elements (TEs) expression"
 author:   "João Pedro Agostinho de Sousa"
-date:     "January 25, 2023"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -234,6 +234,12 @@ dev.off()
 svg(filename = "output/figures/revision/TE_Diff_plots.svg", width = 11, height = 15)
 TE_Diff_plots[[1]] / TE_Diff_plots[[2]] / TE_Diff_plots[[3]] / TE_Diff_plots[[4]]
 dev.off()
+
+Zijlmans_2022_diffTE %>% write_tsv("output/tables/Zijlmans_2022_diffTE.txt")
+Kumar_2022_diffTE %>% write_tsv("output/tables/Kumar_2022_diffTE.txt")
+Collinson_2016_diffTE %>% write_tsv("output/tables/Collinson_2016_diffTE.txt")
+Rostovskaya_2019_diffTE %>% write_tsv("output/tables/Rostovskaya_2019_diffTE.txt")
+
 
 ```
 

@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "MOFA2 model"
+subtitle: "Differential peak FASTA files for motif detection"
 author:   "João Pedro Agostinho de Sousa"
-date:     "April 19, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged

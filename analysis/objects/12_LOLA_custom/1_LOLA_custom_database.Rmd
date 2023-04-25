@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Create a LOLA custom database"
 author:   "João Pedro Agostinho de Sousa"
-date:     "October 26, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -148,7 +148,6 @@ macs_peaks_gr %>%
                                  dataSource    = "NME lab",
                                  description   = paste0(y, " | ", .y)
                                  ))}) %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chipseq_atacseq_peaks/index.txt")
-
 
 # Saving collection.txt file
 tibble(collector = "Joao Sousa", date = "2021-10-27", source = "NME lab", description = "ChIP-seq and ATAC-seq MACS2 peaks") %>% write_tsv("output/database/LOLA/LOLACustom/hg38/chipseq_atacseq_peaks/collection.txt")

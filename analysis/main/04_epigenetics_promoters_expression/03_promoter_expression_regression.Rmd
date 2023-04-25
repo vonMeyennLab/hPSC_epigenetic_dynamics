@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Promoter and gene expression analysis"
 author:   "João Pedro Agostinho de Sousa"
-date:     "May 18, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -124,7 +124,8 @@ global_rsq_plot <-
 	        panel.grid.minor = element_blank()) +
 	  labs(x = "", y = "Adjusted R-squared") +
     scale_y_continuous(breaks = seq(0, 1, 0.1)) +
-    facet_wrap(gene_set ~ ., ncol = 1)
+    facet_wrap(gene_set ~ ., ncol = 1) +
+    scale_y_continuous(limits = c(0, 0.61), breaks = seq(0, 0.6, 0.1))
 
 ```
 
@@ -482,7 +483,7 @@ counts_vs_density_by_pluripotency_plot3 <-
 # Saving plots
 ```{r}
 
-svg(filename = "output/figures/04_epigenetics_promoters_expression/promoter_expression_regression_1.svg", width = 2.5, height = 7.5)
+svg(filename = "output/figures/revision/promoter_expression_regression_1.svg", width = 2.5, height = 7.5)
 global_rsq_plot
 dev.off()
 

@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "X chromosome analysis - H3K27me3 and H3K9me3 dynamics"
 author:   "João Pedro Agostinho de Sousa"
-date:     "November 16, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -353,13 +353,13 @@ col_fun <- circlize::colorRamp2(c(0,0.5,2.5,5), colors = c("lightblue", "white",
 
 enrichment_ht_1 <- 
 ComplexHeatmap::Heatmap(matrix            = enrichment_data_pvalue_1, 
-                        name              = "Log2(odds ratio)",
+                        name              = "Log2\nodds ratio",
                         col               = col_fun,
                         cluster_rows      = T,
                         row_names_side    = "left",
                         cluster_columns   = T,
                         column_names_rot  = 45,
-                        border            = "black", 
+                        border            = "black",
                         rect_gp           = gpar(col = "gray", fill = NA),
                         cell_fun          = function(j, i, x, y, width, height, fill) {
                           grid.circle(x   = x, 
@@ -413,7 +413,7 @@ ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2,
                         cell_fun         = function(j, i, x, y, width, height, fill) {
                           grid.circle(x  = x, 
                                       y  = y, 
-                                      r  = log(enrichment_data_pvalue_2[i, j])/80,
+                                      r  = log(enrichment_data_pvalue_2[i, j])/70,
                                       gp = gpar(fill = col_fun(enrichment_data_oddsRatio_2[i, j]), col = "black"))
                           })
 
@@ -438,11 +438,11 @@ flow_plot
 dev.off()
 
 # Saving enrichment plots
-svg(filename = "output/figures/revision/XChrom_enrich_plot_1.svg", width = 6, height = 3)
+svg(filename = "output/figures/revision/XChrom_enrich_plot_1.svg", width = 10, height = 5)
 enrichment_ht_1
 dev.off()
 
-svg(filename = "output/figures/revision/XChrom_enrich_plot_2.svg", width = 6, height = 3)
+svg(filename = "output/figures/revision/XChrom_enrich_plot_2.svg", width = 6, height = 3.5)
 enrichment_ht_2
 dev.off()
 

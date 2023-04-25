@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Genome-wide analysis - Percentage of peaks and methylation ratio in unbiased regions classified by annotation overlap (Autosomes)"
 author:   "João Pedro Agostinho de Sousa"
-date:     "May 18, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged

@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "ChromHMM stacked"
 author:   "João Pedro Agostinho de Sousa"
-date:     "April 19, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -205,6 +205,8 @@ ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_1,
                                       r  = enrichment_data_pvalue_1[i, j]/10000,
                                       gp = gpar(fill = col_fun(enrichment_data_oddsRatio_1[i, j]), col = "black"))
                           })
+
+enrichment_data %>% dplyr::rename(state = userSet) %>% arrange(state) %>% write_tsv("output/tables/enrichment_data.txt")
 
 ```
 

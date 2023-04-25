@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "MOFA2 model"
+subtitle: "Overlap of peaks with repeat family"
 author:   "João Pedro Agostinho de Sousa"
-date:     "April 19, 2021"
+date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -27,8 +27,8 @@ load(file = "output/database/chipseq_atacseq_counts_in_repeats.RData")
 
 # Adding repeats family as rownames
 repeats_repFamily <- genome_annotation$Repeats %>% as.data.frame() %>% pull(repFamily)
-repeats_position <- genome_annotation$Repeats %>% as.data.frame() %>% tidyr::unite("position", seqnames:end, sep = ":") %>% pull(position)
-
+repeats_position  <- genome_annotation$Repeats %>% as.data.frame() %>% tidyr::unite("position", seqnames:end, sep = ":") %>% pull(position)
+ 
 chipseq_atacseq_repeat_counts <- 
 map(chipseq_atacseq_normalized_counts, function(x){
   
@@ -147,9 +147,9 @@ load(file = "output/database/chipseq_atacseq_peaks.RData")
 
 macs_peaks_gr <- 
   macs_peaks_gr %>%
- .[seqnames(.) %in% 1:22] %>% 
- .[!.$day == 3] %>% 
- as.data.frame() %>%
+  as.data.frame() %>%
+ .[.$seqnames %in% c(1:22),] %>% 
+ .[!.$day == 3,] %>% 
  named_group_split(seqtype) %>% 
  map(~ named_group_split(.x, day) %>% map(~ makeGRangesFromDataFrame(.x)))
 

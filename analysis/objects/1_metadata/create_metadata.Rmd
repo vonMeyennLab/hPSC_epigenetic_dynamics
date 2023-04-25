@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Metadata"
 author:   "João Pedro Agostinho de Sousa"
-date:     "January 11, 2023"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -166,9 +166,6 @@ PBAT_metadata[order(PBAT_metadata$sample_id, PBAT_metadata$batch), ] %>% .[! dup
 ```{r, eval = FALSE}
 
 save(RNAseq_metadata, PBAT_metadata, file = "output/database/metadata.RData")
-
-# cleaning metadata objects to avoid using this objects in the next chunck
-rm(RNAseq_metadata, PBAT_metadata)
 
 ```
 
