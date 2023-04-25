@@ -1,0 +1,3 @@
+sbatch -n 1 --cpus-per-task=20 --mem-per-cpu=4096 --time 04:00:00 --wrap="SalmonTE.py quant --reference=hs --num_threads=20 fastq/*.gz"
+
+sbatch -n 1 --cpus-per-task=1 --mem-per-cpu=4096 --time 04:00:00 --wrap="SalmonTE.py test --inpath=SalmonTE_output --outpath=SalmonTE_statistical_test --tabletype=csv --figtype=png --analysis_type=DE --conditions=control,treatment"

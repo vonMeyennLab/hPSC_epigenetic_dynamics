@@ -1,0 +1,51 @@
+##################################################
+Stacked design
+##################################################
+
+# BinarizeBam
+bsub -W 4:00 -n 4 -R "rusage[mem=6000, scratch=6000]" \
+"java -mx20000M -jar -Djava.io.tmpdir=\$TMPDIR ChromHMM.jar \
+BinarizeBam \
+-paired /cluster/scratch/josousa/chromHMM/ChromHMM/CHROMSIZES/GRCh38.txt \
+/cluster/scratch/josousa/bamfiles \
+/cluster/scratch/josousa/chromHMM/ChromHMM_design_stacked_all_samples.txt \
+/cluster/scratch/josousa/stacked_all_samples/binary_files" \
+/
+
+# LearnModel
+bsub -W 24:00 -n 20 -R "rusage[mem=5000, scratch=1000]" \
+"seq 1 100 | parallel java -mx4000M -jar -Djava.io.tmpdir=\$TMPDIR ChromHMM.jar \
+LearnModel \
+-s 123 -nobrowser -noimage -nobed -noenrich -noautoopen \
+/cluster/scratch/josousa/stacked_all_samples/binary_files/ \
+/cluster/scratch/josousa/stacked_all_samples/model/ \
+{} \
+GRCh38" \
+/
+
+# CompareModels
+bsub -W 4:00 -n 10 -R "rusage[mem=2000, scratch=1000]" \
+"java -mx20000M -jar -Djava.io.tmpdir=\$TMPDIR ChromHMM.jar \
+CompareModels \
+/cluster/scratch/josousa/stacked_all_samples/model/emissions_100.txt \
+/cluster/scratch/josousa/stacked_all_samples/model/ \
+/cluster/scratch/josousa/stacked_all_samples/compare_models/stacked_all_samples_1_to_100" \
+/
+
+# MakeSegmentation
+bsub -W 24:00 -n 9 -R "rusage[mem=6000, scratch=1000]" \
+"ls /cluster/scratch/josousa/stacked_all_samples/model/model_{25,36,50}.txt | parallel java -mx5000M -jar -Djava.io.tmpdir=\$TMPDIR ChromHMM.jar \
+MakeSegmentation \
+{} \
+/cluster/scratch/josousa/stacked_all_samples/binary_files \
+/cluster/scratch/josousa/stacked_all_samples/segmentation" \
+/
+
+# OverlapEnrichment
+bsub -W 24:00 -n 10 -R "rusage[mem=4000, scratch=1000]" \
+"java -mx4000M -jar -Djava.io.tmpdir=\$TMPDIR ChromHMM.jar \
+OverlapEnrichment \
+/cluster/scratch/josousa/stacked_all_samples/segmentation/GRCh38_25_segments.bed \
+/cluster/scratch/josousa/chromHMM/ChromHMM/COORDS/GRCh38/ \
+/cluster/scratch/josousa/stacked_all_samples/overlap_enrichment/{/.}_overlap_enrichment" \
+/
