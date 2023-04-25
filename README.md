@@ -1,6 +1,6 @@
 ## Epigenetic dynamics during capacitation of naïve human pluripotent stem cells
 
-This repository contains all scripts to reproduce the results of the manuscript.
+This repository contains all scripts to reproduce the results of the article.
 
 #### Highlights
 *	A multi-omics resource of naïve and capacitated/primed human pluripotent stem cells.
@@ -42,11 +42,10 @@ Human pluripotent stem cells (hPSCs) are of fundamental relevance in regenerativ
 &emsp;&emsp;&emsp;&emsp;:file_folder: ```02_genome_wide_analysis```</p>
 &emsp;&emsp;&emsp;&emsp;:file_folder: ```03_condition_comparison```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```ChromHMM```</p>
-&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```CpG_islands```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```MOFA```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```X_chromosome_inactivation```</p>
-&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```bivalency```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```human_imprints```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```motifs```</p>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```repeats```</p>
-&emsp;&emsp;&emsp;&emsp;:file_folder: ```04_epigenetics_promoters_expression```</p>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:file_folder: ```TE_expression```</p>
+&emsp;&emsp;&emsp;&emsp;:file_folder: ```04_promoters_expression```</p>
