@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "X chromosome analysis - ChIP-seq and ATAC-seq peaks"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -124,7 +124,6 @@ ggplot(data = macs_peaks_percentage_chrX %>% filter(!seqtype %in% c("H3K27me3", 
 svg(filename = "output/figures/03_condition_comparison/X_chromosome_2.svg", width = 6, height = 6)
 plot_peaks_percentage_by_chr
 dev.off()
-
 
 svg(filename = "output/figures/03_condition_comparison/X_chromosome_3.svg", width = 7.25, height = 7)
 plot_peaks_percentage_chrX_1 / plot_peaks_percentage_chrX_2 + plot_layout(heights = c(1, 0.5), widths = c(1, 1))

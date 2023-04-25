@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "Promoter and gene expression analysis"
+subtitle: "Multivariate linear regression - protein-coding genes"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged

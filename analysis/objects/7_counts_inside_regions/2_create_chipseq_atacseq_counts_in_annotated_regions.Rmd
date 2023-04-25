@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "Counts in annotated regions"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged

@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "MOFA2 model - without methylation"
+subtitle: "MOFA2 model with ATAC-seq and ChIP-seq peaks and methylation 200 CpG-containing windows"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -106,6 +106,22 @@ map(dba_analyze, function(x){
 # Log transform diffbind region counts
 dba_analyze_norm_counts <- map(dba_analyze_norm_counts, ~ log2(.x + 1))
 
+H3K9me3 <- 
+dba.report(dba_analyze$H3K9me3$cR_H9_EOS_d20E.vs.H9_EOS) %>% 
+  as.data.frame() %>%
+  filter(seqnames %in% c("X")) %>%
+  filter(FDR < 0.05) %>%
+  filter(abs(Fold) > 2) %>% 
+  filter(Fold < 0)
+
+H3K27me3 <- 
+dba.report(dba_analyze$H3K27me3$cR_H9_EOS_d20E.vs.H9_EOS) %>% 
+  as.data.frame() %>%
+  filter(seqnames %in% c("X")) %>%
+  filter(FDR < 0.05) %>%
+  filter(abs(Fold) > 2) %>% 
+  filter(Fold > 0)
+
 ```
 
 # Modeling
@@ -117,6 +133,7 @@ colnames_order <- chipseq_atacseq_normalized_counts$`ATAC-Seq` %>% colnames %>% 
 # Creating the MOFA object
 MOFAobject <- create_mofa(
                           list(
+                            "Methylation" = PBAT_meth_ratio[, colnames_order] %>% as.matrix(),
                             "ATAC-seq"    = dba_analyze_norm_counts$`ATAC-Seq`[, colnames_order] %>% as.matrix(),
                             "H3K4me3"     = dba_analyze_norm_counts$H3K4me3[, colnames_order] %>% as.matrix(),
                             "H3K4me1"     = dba_analyze_norm_counts$H3K4me1[, colnames_order] %>% as.matrix(),
@@ -147,10 +164,8 @@ MOFAobject <- prepare_mofa(
   training_options = train_opts
 )
 
-outfile <- "tmp/MOFA2_peaks_without_methylation.hdf5"
-#reticulate::py_install("mofapy2", envname = "r-reticulate", method = "conda", conda = "/scratch/josousa/miniconda3/condabin/conda", pip = TRUE)
-#reticulate::use_condaenv(condaenv = "/scratch/josousa/miniconda3/envs/r-reticulate", required = TRUE)
-MOFAobject.trained <- MOFA2::run_mofa(object = MOFAobject, outfile = outfile, use_basilisk = F)
+outfile <- "tmp/MOFA2_peaks_w_methylation.hdf5"
+MOFAobject.trained <- MOFA2::run_mofa(object = MOFAobject, outfile = outfile, use_basilisk = T)
 
 ```
 
@@ -158,7 +173,7 @@ MOFAobject.trained <- MOFA2::run_mofa(object = MOFAobject, outfile = outfile, us
 ```{r}
 
 # loading the model
-model <- load_model("tmp/MOFA2_peaks_without_methylation.hdf5")
+model <- load_model("tmp/MOFA2_peaks_w_methylation.hdf5")
 
 # overview of the model
 plot_data_overview(model)
@@ -212,7 +227,6 @@ variance_explained$r2_per_factor %>%
   scale_y_discrete(position = "right") +
   coord_flip()
 
-
 ht_variance_explained_total <- 
 variance_explained$r2_total %>%
   mutate(view = factor(view, levels = c(
@@ -263,7 +277,7 @@ ggplot(data = factors, mapping = aes(NA, value, fill = color)) +
 ```{r}
 
 # TSNE
-set.seed(321)
+set.seed(333)
 tsne_data <- run_tsne(model, perplexity = 4)
 
 tsne_plot_data <-
@@ -316,14 +330,14 @@ umap_plot <-
 # Saving plots
 ```{r}
 
-svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_1.svg", width = 3.25, height = 3)
-#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_1.pdf"    , width = 3.25, height = 3)
+svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_w_methylation_plot_1.svg", width = 3.25, height = 3)
+#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_w_methylation_plot_1.pdf"    , width = 3.25, height = 3)
 tsne_plot
 dev.off()
 
 
-svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_2.svg", width = 9, height = 5)
-#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_without_methylation_plot_2.pdf"    , width = 9, height = 5)
+svg(filename = "output/figures/03_condition_comparison/MOFA2_peaks_w_methylation_plot_2.svg", width = 9, height = 5)
+#pdf(file = "output/figures/03_condition_comparison/MOFA2_peaks_w_methylation_plot_2.pdf"    , width = 9, height = 5)
 ht_factors + ht_variance_explained
 dev.off()
 

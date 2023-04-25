@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "Bivalency - flow chart"
+subtitle: "Protein-coding genes - flow chart"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -43,7 +43,7 @@ load("output/database/chipseq_atacseq_peaks.RData")
 
 macs_peaks_gr_in_autosomes <- macs_peaks_gr %>% .[seqnames(.) %in% 1:22]
 
-TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% .[.$gene_biotype != "protein_coding"]
+TSS_in_autosomes <- genome_annotation$TSS %>% .[seqnames(.) %in% 1:22] %>% .[.$gene_biotype == "protein_coding"]
 
 ```
 
@@ -247,7 +247,7 @@ map2(flow_plot_data_filtered,
 # Gene ontology (cR-H9)
 ```{r}
 
-# H3K4me3 + H3K27ac (d0) ---> H3K4me3 (d10)
+# H3K4me3 + H3K27ac (d0) -> H3K4me3 (d10)
 change_1_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -260,7 +260,7 @@ change_1_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d0) ---> H3K4me3 + H3K27ac (d10)
+# H3K4me3 + H3K27ac (d0) -> H3K4me3 + H3K27ac (d10)
 change_2_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -273,7 +273,7 @@ change_2_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d0) ---> Bivalent + H3K27ac (d10)
+# H3K4me3 + H3K27ac (d0) -> Bivalent + H3K27ac (d10)
 change_3_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -286,7 +286,7 @@ change_3_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d0) ---> H3K4me3 (d10)
+# H3K4me3 (d0) -> H3K4me3 (d10)
 change_4_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -299,7 +299,7 @@ change_4_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+# H3K4me3 (d10) -> H3K4me3 + H3K27ac (H9 Primed)
 change_5_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -312,7 +312,7 @@ change_5_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d10) ---> H3K4me3 (H9 Primed)
+# H3K4me3 (d10) -> H3K4me3 (H9 Primed)
 change_6_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -325,7 +325,7 @@ change_6_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+# H3K4me3 + H3K27ac (d10) -> H3K4me3 + H3K27ac (H9 Primed)
 change_7_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -368,7 +368,7 @@ GO_cRH9_plot <-
 # Gene ontology (HNES1)
 ```{r}
 
-# H3K4me3 + H3K27ac (d0) ---> H3K4me3 (d10)
+# H3K4me3 + H3K27ac (d0) -> H3K4me3 (d10)
 change_1_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -381,7 +381,7 @@ change_1_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d0) ---> H3K4me3 + H3K27ac (d10)
+# H3K4me3 + H3K27ac (d0) -> H3K4me3 + H3K27ac (d10)
 change_2_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -394,7 +394,7 @@ change_2_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d0) ---> Bivalent + H3K27ac (d10)
+# H3K4me3 + H3K27ac (d0) -> Bivalent + H3K27ac (d10)
 change_3_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -407,7 +407,7 @@ change_3_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d0) ---> H3K4me3 (d10)
+# H3K4me3 (d0) -> H3K4me3 (d10)
 change_4_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -420,7 +420,7 @@ change_4_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+# H3K4me3 (d10) -> H3K4me3 + H3K27ac (H9 Primed)
 change_5_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -433,7 +433,7 @@ change_5_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 (d10) ---> H3K4me3 (H9 Primed)
+# H3K4me3 (d10) -> H3K4me3 (H9 Primed)
 change_6_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 
@@ -446,7 +446,7 @@ change_6_gene_ids <-
   pull(gene_id) %>% 
   unique
 
-# H3K4me3 + H3K27ac (d10) ---> H3K4me3 + H3K27ac (H9 Primed)
+# H3K4me3 + H3K27ac (d10) -> H3K4me3 + H3K27ac (H9 Primed)
 change_7_gene_ids <-
   peaks_in_TSS_by_category %>%
   map2(names(.), 

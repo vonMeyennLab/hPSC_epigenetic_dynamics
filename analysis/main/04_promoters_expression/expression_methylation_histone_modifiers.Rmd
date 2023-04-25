@@ -1,8 +1,8 @@
 ---
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
-subtitle: "DNMT, TET, IDH, PcG, and TrxG family gene expression"
+subtitle: "Protein family gene expression"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged

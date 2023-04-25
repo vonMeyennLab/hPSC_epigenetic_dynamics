@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "X chromosome analysis - H3K27me3 and H3K9me3 dynamics"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -224,9 +224,6 @@ map2(flow_plot_data_filtered,
 # Enrichment over annotated regions
 ```{r}
 
-save(flow_plot_data_filtered, file = "output/database/flow_plot_data_filtered.RData")
-load("output/database/flow_plot_data_filtered.RData")
-
 # Loading LOLA Core databases
 RegionDB_LOLACore <- loadRegionDB(dbLocation = "output/database/LOLA/LOLACore/hg38", useCache = T)
 
@@ -421,9 +418,6 @@ ComplexHeatmap::Heatmap(matrix           = enrichment_data_pvalue_2,
 
 # Saving results
 ```{r}
-
-# Saving probe data
-save(probe_by_type, file = "output/database/Xchrom_probe_by_type.RData")
 
 # Saving density plot
 svg(filename = "output/figures/revision/XChrom_density_plot.svg", width = 6, height = 5)

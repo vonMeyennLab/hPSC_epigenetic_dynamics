@@ -2,7 +2,7 @@
 title:    "Epigenetic dynamics during capacitation of naïve human pluripotent stem cells"
 subtitle: "All sequencing data counts inside promoters"
 author:   "João Pedro Agostinho de Sousa"
-date:     "Date: `r format(sSys.time(),'%d %B, %Y')`"
+date:     "Date: `r format(Sys.time(),'%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
@@ -63,7 +63,6 @@ RNAseq_normalized_counts <-
   ungroup %>% 
   dplyr::rename(`RNA-Seq` = counts)
 
-
 # ChIP-Seq and ATAC-Seq
 plan("multisession", workers = 6)
 
@@ -81,7 +80,6 @@ chipseq_atacseq_normalized_counts <-
   )
 
 plan("sequential")
-
 
 
 ######## Methylation ########
