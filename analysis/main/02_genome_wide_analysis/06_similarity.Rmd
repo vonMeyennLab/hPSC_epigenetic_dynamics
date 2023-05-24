@@ -165,7 +165,7 @@ ggplot(rbind(similarity_plot_data, similarity_plot_data %>% group_by(group_1, gr
        aes(group_1, forcats::fct_rev(seqtype), fill = correlation, label = round(correlation, 2))) +
   geom_tile(color = "black") +
   geom_text(size = 3.5) +
-  scale_fill_stepsn(n.breaks = 9, colours = brewer.pal(n = 9, name = "Blues")) +
+  scale_fill_stepsn(n.breaks = 9, colours = rev(brewer.pal(n = 11, name = "RdBu"))) +
   scale_y_discrete(expand = c(0,0)) +
   scale_x_discrete(expand = c(0,0)) +
   theme_publication() +
@@ -188,8 +188,8 @@ ggplot(rbind(similarity_plot_data, similarity_plot_data %>% group_by(group_1, gr
 # Saving plots
 ```{r}
 
-svg(filename = "output/figures/02_genome_wide_analysis/similarity_plot_1.svg", width = 18, height = 4)
-pdf(file = "output/figures/02_genome_wide_analysis/similarity_plot_1.pdf", width = 18, height = 4)
+svg(filename = "output/figures/revision/similarity_plot_1.svg", width = 18, height = 4)
+pdf(file = "output/figures/revision/similarity_plot_1.pdf", width = 18, height = 4)
 similarity_plot
 dev.off()
 

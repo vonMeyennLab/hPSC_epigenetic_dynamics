@@ -50,31 +50,36 @@ XIST_XACT_plot_data <-
   mutate(cell = str_remove(cell, "-EOS")) %>% 
   mutate(day = str_remove(day, "-EOS") %>% str_replace("H9$", "H9 Primed")) %>% 
   mutate(cell = factor(cell, levels = c("HNES1", "cR-H9"))) %>% 
-  mutate(day = factor(day, levels = c("0", "10", "20X", "20E", "H9 Primed")))
+  mutate(day = factor(day, levels = c("0", "10", "20X", "20E", "H9 Primed"))) %>% 
+  mutate(gene_name = factor(gene_name, levels = c("XIST", "XACT")))
 
 XIST_XACT_plot <- 
-  ggplot(XIST_XACT_plot_data, aes(day, value, color = gene_name, group = gene_name)) +
-    stat_summary(fun = mean, geom = "line", size = 1.5, color = "black", show.legend = F) +
-    stat_summary(fun = mean, geom = "line", size = 1, show.legend = F) +
-    stat_summary(aes(width = 0.5), fun.data = mean_se, geom = "errorbar", size = 0.5, color = "black", show.legend = F) +
-    stat_summary(fun = mean, geom = "point", color = "black", size = 3, show.legend = F) +
-    stat_summary(fun = mean, geom = "point", size = 2.5, show.legend = T) +
+ggplot(XIST_XACT_plot_data, aes(day, value, fill = cell, group = cell)) +
+    stat_summary(fun = mean, geom = "bar", size = 1, show.legend = F, position = position_dodge(width = 0.9)) +
+    stat_summary(aes(width = 0.5), fun.data = mean_se, geom = "errorbar", color = "black", show.legend = F, position = position_dodge(width = 0.9)) +
     theme_publication() +
     theme(axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1),
           legend.direction = "vertical",
-          legend.position  = "right", 
+          legend.position  = "right",
           panel.grid.major = element_blank(), 
           panel.grid.minor = element_blank()) +
-    scale_color_brewer(palette = "Set1") +
+    scale_fill_brewer(palette = "Set1", direction = -1) +
     labs(x = "", y = "Log2(normalized counts + 1)", color = "Gene") +
-    facet_grid(cell ~ .)
+    facet_grid(gene_name ~ .) +
+    scale_y_continuous(limits  = c(0, 12.5)) +
+    stat_compare_means(label.y = 11,
+                       method  = "t.test",
+                       label   = "p.signif",
+                       hide.ns = T,
+                       symnum.args = list(cutpoints = c(0, 0.001, 0.01, 0.05, Inf),
+                                          symbols   = c("***", "**", "*", "ns")))
 
 ```
 
 # Saving plots
 ```{r}
 
-svg(filename = "output/figures/03_condition_comparison/X_chromosome_1.svg", width = 3.5, height = 3.5)
+svg(filename = "output/figures/revision/X_chromosome_1.svg", width = 2.35, height = 3.75)
 XIST_XACT_plot
 dev.off()
 

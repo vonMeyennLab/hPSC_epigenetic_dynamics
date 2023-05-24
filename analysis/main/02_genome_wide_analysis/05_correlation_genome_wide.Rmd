@@ -44,7 +44,6 @@ PBAT_meth_ratio <-
   summarise(Methylation = mean(meth_perc, na.rm = TRUE)) %>%
   ungroup
 
-
 # ChIP-seq and ATAC-seq counts
 plan("multisession", workers = 10)
 
