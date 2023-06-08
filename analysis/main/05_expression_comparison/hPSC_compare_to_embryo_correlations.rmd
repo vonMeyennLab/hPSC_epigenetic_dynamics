@@ -1,0 +1,301 @@
+---
+title: "Comparison of hPSCs to embryonic epiblast - correlation coefficients"
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+theme_set(theme_bw(base_size=14))
+
+suppressPackageStartupMessages(library(pheatmap))
+
+suppressPackageStartupMessages(library(RColorBrewer))
+
+cols1 <- rev(brewer.pal(9, "RdYlBu"))
+
+suppressPackageStartupMessages(library(data.table))
+
+source("./correlation_utils.R")
+
+```
+
+
+
+
+```{r}
+################################################################
+### Read embryo expression table - mean values per cell type
+################################################################
+
+fread("./Table_S1_primate.embryos.epiblast.log.fpkm.seurat.filtered.mean.csv.gz") %>%
+  as_tibble() -> embryo.mean
+
+```
+
+
+
+```{r}
+##################################################################
+### Read embryo expression table - expression values per cell
+##################################################################
+
+fread("./primate.embryos.epiblast.log.fpkm.seurat.filtered.csv.gz") %>% 
+  as_tibble() -> embryo.fpkm
+
+#######################################
+### Read embryo annotation
+#######################################
+
+fread("./integrated.embryo.annotation.txt") %>%
+  as_tibble() %>%
+  dplyr::select(sample, new.identity) %>%
+  filter(new.identity %in% c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5")) %>%
+  dplyr::rename(cell.type = new.identity)-> embryo.annotation
+
+```
+
+
+```{r}
+##############################################################################
+### Calculate variance for embryo
+##############################################################################
+
+embryo.fpkm %>%
+  pivot_longer(-Gene, names_to = "sample", values_to = "log_fpkm") %>%
+  right_join(embryo.annotation) %>%
+  group_by(Gene, cell.type) %>%
+  summarise(log_fpkm=mean(log_fpkm)) %>%
+  summarise(sem = sd(log_fpkm)/sqrt(n()), log_fpkm=mean(log_fpkm)) -> variable_genes_data
+
+variable_genes_data %>%
+  bind_cols(intensity.difference(variable_genes_data$log_fpkm, variable_genes_data$sem)) %>%
+  select(-sem...5) %>% 
+  dplyr::rename(sem=sem...2) -> variable_genes_data
+
+
+#####
+
+variable_genes_data %>%
+  filter(log_fpkm>-2.5) %>%
+  top_n(n = 1000, wt = z.score) %>%
+  pull(Gene) -> EPI.1000.HVG
+
+```
+
+
+
+
+```{r}
+##############################################################
+##### Calculate correlations between embryo stages - 1000 HVG's
+##############################################################
+
+as.data.frame(cor(embryo.mean %>% 
+                    filter(Gene %in% EPI.1000.HVG) %>%
+                    dplyr::select(-Gene))) %>% 
+  as_tibble(rownames = "embryo") %>%
+  filter(embryo %in% c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5")) %>%
+  dplyr::select(embryo, "hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5") %>%
+  arrange(match(embryo, c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5"))) -> cor.epiblast
+
+cor.epiblast %>%
+  column_to_rownames(var="embryo") %>%
+  pheatmap(
+    cluster_rows = F,
+    cluster_cols = F,
+    color = colorRampPalette(cols1)(100),
+    gaps_col = c(1,2,4,8),
+    gaps_row = c(1,2,4,8),
+    display_numbers = T,
+    number_color = "black",
+    filename = "./comparison.embryonic.epiblast.1000.HVG.pdf", height = 6, width = 6.5)
+
+
+```
+
+
+
+```{r}
+######################################################################################
+### Read hPSC bulk RNAseq expression in replicates and filter out lowly expressed genes
+######################################################################################
+
+fread("./hPSC_transition_replicates.txt") %>%
+  as_tibble() -> hPSC.RNAseq
+
+
+hPSC.RNAseq %>%
+  pivot_longer(-Gene, names_to = "condition", values_to = "log_fpkm") %>%
+  group_by(Gene) %>%
+  summarise(max_expression=max(log_fpkm)) %>%
+  ggplot(aes(max_expression)) + 
+  geom_density(fill="yellow") +
+  geom_vline(xintercept = 1.5)
+
+hPSC.RNAseq %>%
+  pivot_longer(-Gene, names_to = "condition", values_to = "log_fpkm") %>%
+  group_by(Gene) %>%
+  summarise(max_expression=max(log_fpkm)) %>%
+  filter(max_expression > 1.5) %>%
+  pull(Gene) -> reasonably.expressed.genes #11,847 genes
+
+hPSC.RNAseq %>%
+  filter(Gene %in% reasonably.expressed.genes) -> hPSC.RNAseq.filtered
+
+rm(reasonably.expressed.genes)
+
+```
+
+
+
+```{r}
+#######################################################################################################################################################################
+##### Calculate correlations between hPSCs and embryonic epiblast - considering all reasonably expressed genes commonly detected in the two datasets (7,008 genes) ####
+#######################################################################################################################################################################
+
+cor(embryo.mean %>%
+      inner_join(hPSC.RNAseq.filtered) %>%
+      dplyr::select(-Gene)) %>%
+  as.data.frame() %>%
+  as_tibble(rownames = "embryo") %>%
+  filter(embryo %in% c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5")) %>%
+  dplyr::select(embryo, starts_with("HNES1"), starts_with("CRH9EOS"), starts_with("ctrl")) %>%
+  relocate(HNES1_d0, CRH9EOS_d0, HNES1_d1, CRH9EOS_d1, HNES1_d2, CRH9EOS_d2, HNES1_d3, CRH9EOS_d3, HNES1_d7, CRH9EOS_d7, HNES1_d10, CRH9EOS_d10, `HNES1_d20+X`, `CRH9EOS_d20+X`, `HNES1_d20+E`, `CRH9EOS_d20+E`, ctrl) %>%
+  arrange(match(embryo, c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5"))) -> cor.hPSC.embryo.all
+
+cor.hPSC.embryo.all %>%
+  column_to_rownames(var="embryo") %>%
+  pheatmap(
+    cluster_rows = F,
+    cluster_cols = F,
+    color = colorRampPalette(cols1)(100),
+    gaps_col = c(2,4,6,8,10,12,14,16),
+    gaps_row = c(1,2,4),
+    display_numbers = T,
+    number_color = "black",
+    filename = "./hPSC.transition.comparison.to.embryo.all.genes.pdf", height = 4.5, width = 9)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+###################################################################################################
+#### Read hPSC bulk RNAseq expression in individual samples and filter out low expressed genes ####
+###################################################################################################
+
+fread("Table_S2_hPSC_transition_samples_protein_coding_logFPKM.csv.gz") %>%
+  as_tibble() %>%
+  dplyr::select(Gene, starts_with("HNES1"), starts_with("CRH9EOS"), starts_with("ctrl")) -> hPSC.RNAseq.samples
+
+
+hPSC.RNAseq.samples %>%
+  pivot_longer(-Gene, names_to = "condition", values_to = "log_fpkm") %>%
+  group_by(Gene) %>%
+  summarise(max_expression=max(log_fpkm)) %>%
+  ggplot(aes(max_expression)) + 
+  geom_density(fill="yellow") +
+  geom_vline(xintercept = 0)
+
+hPSC.RNAseq.samples %>%
+  pivot_longer(-Gene, names_to = "condition", values_to = "log_fpkm") %>%
+  group_by(Gene) %>%
+  summarise(max_expression=max(log_fpkm)) %>%
+  filter(max_expression > 0) %>%
+  pull(Gene) -> reasonably.expressed.genes #14,721 genes
+
+hPSC.RNAseq.samples %>%
+  filter(Gene %in% reasonably.expressed.genes) -> hPSC.RNAseq.samples.filtered
+
+rm(reasonably.expressed.genes)
+
+```
+
+
+
+```{r}
+##############################################################################
+### Calculate variance for hPSC
+##############################################################################
+
+as_tibble(colnames(hPSC.RNAseq.samples.filtered)[2:length(colnames(hPSC.RNAseq.samples.filtered))]) %>%
+  mutate(cell.type = c(rep("d0",3), rep("d1",3), rep("d2",3), rep("d3",3), rep("d7",3), rep("d10",3), rep("d20X",3), rep("d20E",3), rep("d0",3), rep("d1",3), rep("d2",3), rep("d3",3), rep("d7",3), rep("d10",3), rep("d20X",3), rep("d20E",3), rep("ctrl",3))) %>%
+  dplyr::rename(sample = value) -> hPSC.annotation
+
+
+hPSC.RNAseq.samples.filtered %>%
+  pivot_longer(-Gene, names_to = "sample", values_to = "log_fpkm") %>%
+  right_join(hPSC.annotation) %>%
+  group_by(Gene, cell.type) %>%
+  summarise(log_fpkm=mean(log_fpkm)) %>%
+  summarise(sem = sd(log_fpkm)/sqrt(n()), log_fpkm=mean(log_fpkm)) -> variable_genes_data
+
+variable_genes_data %>%
+  bind_cols(intensity.difference(variable_genes_data$log_fpkm, variable_genes_data$sem)) %>%
+  select(-sem...5) %>% 
+  dplyr::rename(sem=sem...2) -> variable_genes_data
+
+#####
+
+variable_genes_data %>%
+  filter(log_fpkm>-2.5) %>%
+  top_n(n = 1000, wt = z.score) %>%
+  pull(Gene) -> hPSC.1000.HVG
+
+```
+
+
+
+
+
+
+```{r}
+##########################################################################################################################################################################
+##### Calculate correlations between hPSCs and embryonic epiblast - considering commonly detected genes from the list of 1,000 HVGs during the transition (573 genes) ####
+##########################################################################################################################################################################
+
+embryo.mean %>%
+  inner_join(hPSC.RNAseq.filtered) %>% 
+  filter(Gene %in% hPSC.1000.HVG) %>%
+  dplyr::select(-Gene)
+
+cor(embryo.mean %>%
+      inner_join(hPSC.RNAseq.filtered) %>% 
+      filter(Gene %in% hPSC.1000.HVG) %>%
+      dplyr::select(-Gene)) %>%
+  as.data.frame() %>%
+  as_tibble(rownames = "embryo") %>%
+  filter(embryo %in% c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5")) %>%
+  dplyr::select(embryo, starts_with("HNES1"), starts_with("CRH9EOS"), starts_with("ctrl")) %>%
+  relocate(HNES1_d0, CRH9EOS_d0, HNES1_d1, CRH9EOS_d1, HNES1_d2, CRH9EOS_d2, HNES1_d3, CRH9EOS_d3, HNES1_d7, CRH9EOS_d7, HNES1_d10, CRH9EOS_d10, `HNES1_d20+X`, `CRH9EOS_d20+X`, `HNES1_d20+E`, `CRH9EOS_d20+E`, ctrl) %>%
+  arrange(match(embryo, c("hsICM", "hsPreEPI", "hsPostEPI.E1", "hsPostEPI.E2", "cyPostEPI-L1", "cyPostEPI-L2","cyPostEPI-L3","cyPostEPI-L4","hsPostEPI.L5"))) -> cor.hPSC.embryo.HVG
+
+
+cor.hPSC.embryo.HVG %>%
+  column_to_rownames(var="embryo") %>%
+  pheatmap(
+    cluster_rows = F,
+    cluster_cols = F,
+    color = colorRampPalette(cols1)(100),
+    gaps_col = c(2,4,6,8,10,12,14,16),
+    gaps_row = c(1,2,4),
+    display_numbers = T,
+    number_color = "black",
+    filename = "./hPSC.transition.comparison.to.embryo.HVG.pdf", height = 4.5, width = 9)
+
+```
+
+
+
+
+
+
