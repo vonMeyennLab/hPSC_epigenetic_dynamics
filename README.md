@@ -1,5 +1,5 @@
 ## Epigenetic dynamics during capacitation of naïve human pluripotent stem cells
-
+[![DOI](https://zenodo.org/badge/632503416.svg)](https://zenodo.org/badge/latestdoi/632503416)
 
 #### Abstract
 <p align="justify"> 
